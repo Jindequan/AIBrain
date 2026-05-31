@@ -1,0 +1,31 @@
+appId: com.aibrain.frontend
+productName: AIBrain
+directories:
+  output: release
+files:
+  - dist/**/*
+  - main.cjs
+  - preload.cjs
+  - package.json
+
+# Unpack frontend dist from asar so the Elixir backend can read these files
+# when serving them via Plug.Static in production.
+asarUnpack:
+  - dist/**/*
+
+# Bundle the compiled Elixir release so Electron can spawn it as a child process.
+# The backend is placed at Resources/backend/ inside the app bundle.
+extraResources:
+  - from: ../backend/_build/prod/rel/ai_brain
+    to: backend
+
+icon: public/icon.png
+win:
+  target: nsis
+  icon: public/icon.png
+mac:
+  target: dmg
+  icon: public/icon.png
+linux:
+  target: AppImage
+  icon: public/icon.png

@@ -1,0 +1,99 @@
+/* ── Desktop-native styling ─────────────────────────────────────── */
+
+/* Native-style scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Native text selection */
+::selection {
+  background: rgba(47, 123, 255, 0.2);
+  color: inherit;
+}
+
+/* Remove tap highlight (not a mobile app) */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Native button reset */
+button:focus-visible {
+  outline: 2px solid rgba(47, 123, 255, 0.4);
+  outline-offset: 2px;
+}
+
+/* Prevent text selection on UI elements */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Drag region (Electron) */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Desktop-style input focus */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: #2f7bff;
+  box-shadow: 0 0 0 3px rgba(47, 123, 255, 0.15);
+}
+
+/* Smooth loading bars (desktop-style) */
+@keyframes desktop-progress {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0%); }
+  100% { transform: translateX(100%); }
+}
+
+.progress-bar {
+  height: 2px;
+  background: #2f7bff;
+  animation: desktop-progress 2s ease-in-out infinite;
+}
+
+/* ── Dark mode overrides ─────────────────────────────────────── */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.dark ::selection {
+  background: rgba(47, 123, 255, 0.35);
+}

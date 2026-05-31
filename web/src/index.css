@@ -1,0 +1,69 @@
+/* Import Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* Theme overrides (dark mode) */
+@import './styles/themes.css';
+
+/* Desktop-native styling */
+@import './styles/desktop.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+body {
+  background: #f5f5f5;
+  background-attachment: fixed;
+  min-height: 100vh;
+  color: #0a0a0a;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 2px; }
+}
+
+/* highlight.js token colors (dark bg #111827 / gray-900) */
+.hljs                 { background: transparent; color: #e5e7eb; }
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in        { color: #F9A8D4; }          /* pink  — keywords */
+.hljs-string,
+.hljs-attr            { color: #4ADE80; }           /* green — strings */
+.hljs-number,
+.hljs-literal         { color: #FB923C; }           /* orange — numbers */
+.hljs-comment,
+.hljs-quote           { color: #6b7280; font-style: italic; }
+.hljs-title,
+.hljs-section,
+.hljs-name            { color: #60A5FA; }           /* blue — names/titles */
+.hljs-type,
+.hljs-class           { color: #CA9109; }           /* gold — types */
+.hljs-variable,
+.hljs-template-variable { color: #e5e7eb; }
+.hljs-tag             { color: #F9A8D4; }
+.hljs-punctuation,
+.hljs-operator        { color: #9ca3af; }
+.hljs-meta            { color: #CA9109; }
+
+/* KaTeX rendered math */
+.katex { font-size: 1em; }
+.katex-display { overflow-x: auto; padding: 4px 0; }
+
+/* Markdown body first/last child spacing */
+.markdown-body > *:first-child { margin-top: 0; }
+.markdown-body > *:last-child  { margin-bottom: 0; }
+
+.chat-composer textarea {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.chat-composer textarea:focus {
+  border-color: transparent !important;
+}

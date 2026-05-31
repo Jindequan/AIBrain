@@ -1,0 +1,249 @@
+/* ── Dark mode overrides ──────────────────────────────────── */
+/* Applied via .dark class on <html> element                */
+/* System preference fallback is also supported via @media  */
+
+.dark {
+  color-scheme: dark;
+}
+
+/* ── Inputs & form fields: ensure visibility in dark mode ── */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.dark textarea,
+.dark select {
+  background-color: #27272a !important;
+  border-color: #3f3f46 !important;
+}
+.dark input:focus,
+.dark textarea:focus,
+.dark select:focus {
+  border-color: #2f7bff !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #52525b;
+}
+
+/* ── System dark mode preference (fallback, no .dark class) ─ */
+@media (prefers-color-scheme: dark) {
+  :root { color-scheme: dark; }
+  body { background: #0f0f0f; }
+  .bg-white, .bg-card-bg { background-color: #18181b; }
+  .bg-main-bg { background-color: #0f0f0f; }
+  .bg-gray-50 { background-color: #18181b; }
+  .bg-gray-100 { background-color: #27272a; }
+  .text-text-primary { color: #e4e4e7; }
+  .text-text-secondary { color: #a1a1aa; }
+  .text-text-muted { color: #71717a; }
+  .border-border-light, .border-gray-100 { border-color: #27272a; }
+  .border-gray-200, .border-card-border { border-color: #3f3f46; }
+}
+
+/* ── Body ─────────────────────────────────────────────────── */
+.dark body {
+  background: #0f0f0f;
+}
+
+/* ── Backgrounds ──────────────────────────────────────────── */
+.dark .bg-white,
+.dark .bg-card-bg {
+  background-color: #18181b;
+}
+.dark .bg-main-bg {
+  background-color: #0f0f0f;
+}
+.dark .bg-gray-50 {
+  background-color: #18181b;
+}
+.dark .bg-gray-100 {
+  background-color: #27272a;
+}
+.dark .bg-gray-200 {
+  background-color: #3f3f46;
+}
+.dark .bg-gray-800 {
+  background-color: #1a1a2e;
+}
+.dark .bg-gray-900 {
+  background-color: #111118;
+}
+.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+.dark .bg-amber-50\/50 {
+  background-color: rgba(245, 158, 11, 0.1);
+}
+.dark .bg-accent-light {
+  background-color: rgba(47, 123, 255, 0.15);
+}
+.dark .bg-accent\/10 {
+  background-color: rgba(47, 123, 255, 0.15);
+}
+.dark .bg-dark-primary {
+  background-color: #2f7bff;
+}
+.dark .bg-dark-secondary {
+  background-color: #1a3a6b;
+}
+
+/* ── Text ─────────────────────────────────────────────────── */
+.dark .text-text-primary {
+  color: #e4e4e7;
+}
+.dark .text-text-secondary {
+  color: #a1a1aa;
+}
+.dark .text-text-muted {
+  color: #71717a;
+}
+.dark .text-text-muted\/50 {
+  color: rgba(113, 113, 122, 0.5);
+}
+.dark .text-text-muted\/60 {
+  color: rgba(113, 113, 122, 0.6);
+}
+.dark .text-text-light {
+  color: #52525b;
+}
+.dark .text-white {
+  color: #e4e4e7;
+}
+.dark .text-red-500 {
+  color: #f87171;
+}
+.dark .text-red-600 {
+  color: #fca5a5;
+}
+
+/* ── Borders ──────────────────────────────────────────────── */
+.dark .border-border-light,
+.dark .border-gray-100 {
+  border-color: #27272a;
+}
+.dark .border-gray-200,
+.dark .border-card-border {
+  border-color: #3f3f46;
+}
+.dark .border-gray-700 {
+  border-color: #52525b;
+}
+.dark .border-red-200 {
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+/* ── Hover states ─────────────────────────────────────────── */
+.dark .hover\:bg-gray-50:hover {
+  background-color: #27272a;
+}
+.dark .hover\:bg-gray-100:hover {
+  background-color: #3f3f46;
+}
+.dark .hover\:bg-red-50:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+.dark .hover\:text-text-primary:hover {
+  color: #f4f4f5;
+}
+.dark .hover\:text-red-500:hover,
+.dark .hover\:text-red-600:hover {
+  color: #f87171;
+}
+
+/* ── Shadows ──────────────────────────────────────────────── */
+.dark .shadow-card,
+.dark .shadow-card-md,
+.dark .shadow-card-lg,
+.dark .shadow-card-xl {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
+}
+.dark .shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+}
+.dark .shadow-lg {
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.5);
+}
+.dark .shadow-2xl {
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+}
+.dark .shadow-xl {
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Table ────────────────────────────────────────────────── */
+.dark .bg-gray-50 thead,
+.dark thead.bg-gray-50 {
+  background-color: #18181b;
+}
+.dark .hover\:bg-gray-50 tr:hover,
+.dark tr.hover\:bg-gray-50:hover {
+  background-color: #27272a;
+}
+.dark .divide-card-border > * + * {
+  border-color: #3f3f46;
+}
+
+/* ── Code blocks (MarkdownContent) ────────────────────────── */
+.dark .bg-gray-800 {
+  background-color: #1a1a2e;
+}
+.dark .bg-gray-900 pre,
+.dark code[class*="language-"] {
+  background: #111118;
+}
+.dark .text-gray-300 {
+  color: #d4d4d8;
+}
+.dark .text-gray-400 {
+  color: #a1a1aa;
+}
+.dark .text-gray-500 {
+  color: #71717a;
+}
+.dark .hover\:text-white:hover {
+  color: #f4f4f5;
+}
+.dark .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+.dark .hover\:bg-white\/20:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Inline code ──────────────────────────────────────────── */
+.dark .bg-gray-100 code,
+.dark code.bg-gray-100 {
+  background-color: #27272a;
+}
+
+/* ── Placeholder ──────────────────────────────────────────── */
+.dark input::placeholder {
+  color: #52525b;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────── */
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+}
+
+/* ── Animations / pulse ───────────────────────────────────── */
+.dark .animate-pulse {
+  background-color: #27272a;
+}
+
+/* ── Toast / modal backdrops ──────────────────────────────── */
+.dark .bg-black\/40,
+.dark .bg-black\/50 {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* ── Katex ────────────────────────────────────────────────── */
+.dark .katex .mathnormal {
+  color: #e4e4e7;
+}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.dark button.bg-white\/95 {
+  background-color: #27272a;
+}
+.dark .hover\:bg-white:hover {
+  background-color: #3f3f46;
+}

@@ -1,0 +1,17 @@
+{
+  "name": "tts",
+  "version": "1.0.0",
+  "description": "Text-to-speech capabilities using macOS say, espeak, or Piper",
+  "author": "AIBrain",
+  "repository": "https://github.com/aibrain/plugin-tts",
+  "tools": [
+    "AIBrain.Tool.Builtin.TTS"
+  ],
+  "capabilities": [
+    "text_to_speech"
+  ],
+  "dependencies": [],
+  "system_packages": ["piper (optional)"],
+  "status": "enabled",
+  "tags": ["audio", "speech", "accessibility"]
+}

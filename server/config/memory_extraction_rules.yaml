@@ -1,0 +1,63 @@
+# Memory Extraction Rules Configuration
+# 规则驱动的记忆提取配置 - 零LLM成本
+
+project_paths:
+  patterns:
+    - regex: 'project path:\s*(\/[^\s\/]+(?:\/[^\s\/]+)*)'
+      confidence: 0.95
+      importance: 0.8
+    - regex: 'workspace:\s*(\/[^\s\/]+(?:\/[^\s\/]+)*)'
+      confidence: 0.90
+      importance: 0.8
+    - regex: 'in\s+(\/[^\s\/]+(?:\/[^\s\/]+)*)\s+'
+      confidence: 0.85
+      importance: 0.8
+
+user_preferences:
+  patterns:
+    - regex: '我(?:喜欢|偏好|倾向于)\s+(.+?)(?:。|$|\n)'
+      type: preference
+      confidence: 0.80
+      importance: 0.7
+    - regex: '不要|别|避免\s+(.+?)(?:。|$|\n)'
+      type: avoidance
+      confidence: 0.85
+      importance: 0.75
+    - regex: '总是|通常|习惯\s+(.+?)(?:。|$|\n)'
+      type: habit
+      confidence: 0.75
+      importance: 0.65
+
+error_patterns:
+  patterns:
+    - regex: '(?:Error|错误|失败):?\s*(.+?)(?:\n|$)(?:解决|修复|fix|solution):?\s*(.+?)(?:\n|$)'
+      type: error_solution
+      confidence: 0.90
+      importance: 0.95
+      tags: [error, solution, debug]
+
+code_patterns:
+  patterns:
+    - regex: '```(\w+)?\n(.*?)```'
+      type: code_snippet
+      confidence: 0.95
+      importance: 0.6
+      tags: [code]
+
+technical_decisions:
+  patterns:
+    - regex: '决定(?:使用|选择)\s+(.+?)(?:。|$)'
+      type: decision
+      confidence: 0.85
+      importance: 0.8
+      tags: [decision, architecture]
+    - regex: '采用\s+(.+?)(?:。|$)'
+      type: decision
+      confidence: 0.85
+      importance: 0.8
+      tags: [decision]
+    - regex: '架构决定:\s*(.+?)(?:。|$)'
+      type: architecture
+      confidence: 0.90
+      importance: 0.85
+      tags: [decision, architecture]

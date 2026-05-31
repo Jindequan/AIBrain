@@ -1,0 +1,35 @@
+# ── Runtime ──────────────────────────────────────
+.pids/
+.logs/
+
+# ── Elixir / Server ──────────────────────────────
+/server/_build/
+/server/deps/
+*.ez
+erl_crash.dump
+*.beam
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# ── Frontend / Web ────────────────────────────────
+/web/node_modules/
+/web/dist/
+/web/dist-ssr/
+/web/*.local
+
+# ── Editor & OS ───────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.sw?
+
+# ── Internal ──────────────────────────────────────
+.claude/
+.superpowers/
+.worktrees/
+.aibrain/
+.alma-snapshots/
