@@ -85,6 +85,27 @@ defmodule AIBrain.Data.Users do
     end
   end
 
+  @doc "Update user attributes by ID."
+  def update_by_id(id, attrs) when is_map(attrs) do
+    case Repo.get(User, id) do
+      nil ->
+        {:error, :not_found}
+
+      user ->
+        user
+        |> User.changeset(attrs)
+        |> Repo.update()
+        |> case do
+          {:ok, user} ->
+            Logger.info("User updated: #{user.name} (id: #{user.id}, role: #{user.role})")
+            {:ok, user}
+
+          {:error, changeset} ->
+            {:error, inspect(changeset.errors)}
+        end
+    end
+  end
+
   @doc "Update user attributes by role."
   def update(attrs, role \\ "user") when is_map(attrs) do
     query = fn ->

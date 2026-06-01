@@ -10,8 +10,8 @@ export function TopBar() {
   return (
     <header className="h-9 border-b border-border-light bg-[#f8f9fa] dark:bg-[#252527] flex items-center px-3 gap-2 text-xs shrink-0">
       <div className="flex items-center gap-2">
-        <img src="/logo.png" alt="AIBrain" className="w-4 h-4" />
-        <span className="text-[11px] font-semibold text-text-primary tracking-tight">AIBrain</span>
+        <img src="/logo.png" alt="AIbrain" className="w-4 h-4" />
+        <span className="text-[11px] font-semibold text-text-primary tracking-tight">AIbrain</span>
       </div>
 
       <div className="ml-auto flex items-center gap-2">

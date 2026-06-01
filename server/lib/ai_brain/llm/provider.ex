@@ -30,14 +30,7 @@ defmodule AIBrain.LLM.Provider do
   Returns a list of provider atoms: :anthropic, :openai, :google, etc.
   """
   def list_providers do
-    # ReqLLM doesn't expose a public list_providers function,
-    # so we return a hardcoded list of known providers.
-    [
-      :anthropic, :openai, :google, :google_vertex, :azure, :aws_bedrock,
-      :groq, :xai, :openrouter, :cerebras, :fireworks_ai, :meta, 
-      :mistral, :together, :ollama, :vllm, :nearai, :zai, :zai_coder,
-      :zenmux, :venetian, :alibaba, :alibaba_cn, :minimax, :baichuan, :qianfan
-    ]
+    ReqLLM.Providers.list()
   end
 
   @doc """
@@ -46,10 +39,21 @@ defmodule AIBrain.LLM.Provider do
   Returns provider information including name, models, and capabilities.
   """
   def get_provider(provider_atom) when is_atom(provider_atom) do
+    # Get base_url from LLMDB — every model records its provider's API endpoint
+    base_url =
+      try do
+        case LLMDB.models(provider_atom) do
+          [first | _] -> first.base_url
+          _ -> nil
+        end
+      rescue
+        _ -> nil
+      end
+
     {:ok, %{
       name: Atom.to_string(provider_atom),
       provider: provider_atom,
-      base_url: infer_base_url(provider_atom),
+      base_url: base_url,
       fetch_models_url: nil,
       chat_url: nil
     }}
@@ -63,20 +67,6 @@ defmodule AIBrain.LLM.Provider do
     |> get_provider()
   rescue
     _e -> {:error, :invalid_provider}
-  end
-
-  # Helper to infer base URL for common providers
-  defp infer_base_url(provider_atom) do
-    case provider_atom do
-      :openai -> "https://api.openai.com/v1"
-      :anthropic -> "https://api.anthropic.com"
-      :google -> "https://generativelanguage.googleapis.com/v1beta"
-      :groq -> "https://api.groq.com/openai/v1"
-      :openrouter -> "https://openrouter.ai/api/v1"
-      :mistral -> "https://api.mistral.ai/v1"
-      :together -> "https://api.together.xyz/v1"
-      _ -> nil
-    end
   end
 
   # ── Model Handling ─────────────────────────────────────────
@@ -177,11 +167,8 @@ defmodule AIBrain.LLM.Provider do
   Check if a provider has a stored API key.
   """
   def has_api_key?(provider) do
-    provider_atom = normalize_provider(provider) |> elem(1)
-    key_name = provider_key_name(provider_atom)
-
-    case ReqLLM.get_key(key_name) do
-      key when is_binary(key) and key != "" -> true
+    case get_api_key(provider) do
+      {:ok, _key, _source} -> true
       _ -> false
     end
   end

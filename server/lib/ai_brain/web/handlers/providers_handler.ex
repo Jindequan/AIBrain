@@ -187,30 +187,63 @@ defmodule AIBrain.Web.Handlers.ProvidersHandler do
   end
 
   @doc """
-  Lightweight model summary for ChatInput ModelSelector.
-  Returns ONLY per-provider model counts, not full model data.
-  Full model data is loaded on demand via GET /api/v1/providers/:id/models.
+  Model list for ChatInput ModelSelector.
+  Returns user's enabled models from providers that have API keys.
   """
   def handle_list_all_models(conn) do
-    providers_with_keys =
-      LLMProvider.list_providers()
-      |> Enum.filter(&LLMProvider.has_api_key?/1)
+    config = AIBrain.Config.ProviderConfig.load_config()
+    providers_cfg = Map.get(config, "providers", %{})
 
-    # Return minimal info: provider names only. Models loaded lazily per provider.
     models =
-      Enum.map(providers_with_keys, fn provider_atom ->
-        pname = Atom.to_string(provider_atom)
+      providers_cfg
+      |> Enum.filter(fn {name, _cfg} ->
+        AIBrain.LLM.Provider.has_api_key?(String.to_atom(name))
+      end)
+      |> Enum.flat_map(fn {provider, _cfg} ->
+        enabled = AIBrain.Config.ProviderConfig.enabled_models(provider)
+        provider_atom = String.to_atom(provider)
+
+        case enabled do
+          :all ->
+            try do
+              AIBrain.Provider.Catalog.models_for_provider(provider_atom)
+            rescue
+              _ -> []
+            end
+
+          model_ids when is_list(model_ids) ->
+            model_ids
+            |> Enum.map(fn model_id ->
+              try do
+                case LLMDB.model(provider_atom, model_id) do
+                  {:ok, m} ->
+                    %{
+                      "id" => m.id,
+                      "name" => m.name || m.id,
+                      "provider" => provider,
+                      "context_length" => get_in(m, [Access.key(:limits), Access.key(:context)]),
+                      "max_output_tokens" => max_output_from_model(m)
+                    }
+                  _ ->
+                    %{"id" => model_id, "name" => model_id, "provider" => provider,
+                      "context_length" => nil, "max_output_tokens" => nil}
+                end
+              rescue
+                _ ->
+                  %{"id" => model_id, "name" => model_id, "provider" => provider,
+                    "context_length" => nil, "max_output_tokens" => nil}
+              end
+            end)
+        end
+      end)
+      |> Enum.map(fn m ->
         %{
-          provider: pname,
-          name: pname,
-          type: "text",
-          input_modalities: ["text"],
-          output_modalities: ["text"],
-          description: "Models from #{pname}",
-          enabled: true,
-          context_window: nil,
-          max_output_tokens: nil,
-          icon_url: nil
+          id: m["id"],
+          name: m["name"],
+          provider: m["provider"],
+          context_window: m["context_length"],
+          max_output_tokens: m["max_output_tokens"],
+          enabled: true
         }
       end)
 
@@ -251,107 +284,95 @@ defmodule AIBrain.Web.Handlers.ProvidersHandler do
       note: "Models are managed by LLMDB. Use /models/all to list all models."})
   end
 
-  # -- Config management --
+  # ── Catalog (read-only LLMDB) ────────────────────────────
 
-  def handle_get_config(conn, _params) do
-    known = LLMProvider.list_providers()
-
-    local_config = ProviderConfig.load_config()
-    local_names =
-      local_config
-      |> Map.get("providers", %{})
-      |> Map.keys()
-      |> Enum.map(&String.to_atom/1)
-
-    all_providers = (known ++ local_names) |> Enum.uniq()
+  @doc """
+  GET /api/v1/catalog/providers — all providers from LLMDB.
+  """
+  def handle_catalog_providers(conn) do
+    entries = AIBrain.Provider.Catalog.provider_entries()
 
     providers =
-      all_providers
-      |> Enum.map(fn atom ->
-        name = Atom.to_string(atom)
+      Enum.map(entries, fn entry ->
         %{
-          name: name,
-          configured: LLMProvider.has_api_key?(atom),
-          has_api_key: LLMProvider.has_api_key?(atom),
-          api_key: nil,
-          base_url: ProviderConfig.get_base_url(name),
-          priority: ProviderConfig.get_provider_priority(name),
-          enabled: ProviderConfig.provider_enabled?(name),
-          models: %{},
-          enabled_models: ProviderConfig.enabled_models(name)
+          id: entry.name,
+          name: entry.display_name,
+          base_url: entry.base_url,
+          env_key: entry.env_key
         }
       end)
 
     json_response(conn, 200, %{providers: providers})
   end
 
-  def handle_save_config(conn, body) do
-    providers_list =
-      cond do
-        is_map(body) and Map.has_key?(body, "providers") -> body["providers"]
-        is_list(body) -> body
-        true -> []
+  @doc """
+  GET /api/v1/catalog/providers/:id/models — all models for a provider from LLMDB.
+  Read-only reference data for browsing/discovery.
+  """
+  def handle_catalog_provider_models(conn, id) do
+    provider_atom = String.to_atom(id)
+
+    models =
+      try do
+        AIBrain.Provider.Catalog.models_for_provider(provider_atom)
+        |> Enum.map(fn m ->
+          %{
+            id: m["id"],
+            name: m["name"],
+            full_id: m["full_id"],
+            provider: m["provider"],
+            context_length: m["context_length"],
+            max_output_tokens: m["max_output_tokens"],
+            input_modalities: m["input_modalities"] || ["text"],
+            output_modalities: m["output_modalities"] || ["text"],
+            description: m["description"] || ""
+          }
+        end)
+      rescue
+        _ -> []
       end
 
-    Enum.each(providers_list, fn p ->
-      name = p["name"]
-      if name && name != "" do
-        if p["api_key"] && p["api_key"] != "" do
-          LLMProvider.put_api_key(to_provider_atom(name), p["api_key"])
-        end
-
-        enabled = p["enabled"]
-        if enabled == true, do: ProviderConfig.enable_provider(name)
-        if enabled == false, do: ProviderConfig.disable_provider(name)
-
-        if priority = p["priority"] do
-          ProviderConfig.set_provider_priority(name, priority)
-        end
-
-        if base_url = p["base_url"] do
-          ProviderConfig.set_base_url(name, base_url)
-        end
-      end
-    end)
-
-    json_response(conn, 200, %{ok: true})
+    json_response(conn, 200, %{ok: true, provider: id, models: models})
   end
 
-  # -- Model Settings (unified view model, like Jinn) --
+  # ── My Models (user config) ──────────────────────────────
 
   @doc """
-  GET /api/v1/model-settings — providers overview + enabled model IDs only.
-  Models are NOT included. Use GET /api/v1/providers/:id/models for per-provider model list.
+  GET /api/v1/my-models — user's active providers + enabled models + default.
+  This is the small curated set the backend uses for routing.
   """
-  def handle_model_settings(conn) do
-    json_response(conn, 200, build_model_settings())
-  end
-
-  defp build_model_settings do
-    case :persistent_term.get(:ai_brain_model_settings, nil) do
-      nil ->
-        data = compute_and_cache()
-        :persistent_term.put(:ai_brain_model_settings, data)
-        data
-      cached ->
-        cached
-    end
-  end
-
-  defp compute_and_cache do
-    catalog_entries = AIBrain.Provider.Catalog.provider_entries()
+  def handle_my_models(conn) do
     config = AIBrain.Config.ProviderConfig.load_config()
     providers_cfg = Map.get(config, "providers", %{})
-
-    enabled_model_ids = get_enabled_model_ids(providers_cfg)
+    catalog_entries = AIBrain.Provider.Catalog.provider_entries()
 
     default_model =
       case AIBrain.Data.SystemSetting.default_llm_model() do
         {p, m} when is_binary(p) and is_binary(m) -> "#{p}:#{m}"
-        _ -> List.first(enabled_model_ids)
+        _ -> nil
       end
 
     providers =
+      build_my_providers(providers_cfg, catalog_entries)
+      |> Enum.sort_by(&{not (&1.enabled and &1.has_key), &1.name})
+
+    models = build_my_models(providers_cfg, catalog_entries, default_model)
+
+    setup_required =
+      not Enum.any?(providers, fn p -> p.enabled and p.has_key end) or is_nil(default_model)
+
+    json_response(conn, 200, %{
+      providers: providers,
+      models: models,
+      default_model: default_model,
+      setup_required: setup_required
+    })
+  end
+
+  defp build_my_providers(providers_cfg, catalog_entries) do
+    catalog_names = Enum.map(catalog_entries, & &1.name) |> MapSet.new()
+
+    catalog_providers =
       Enum.map(catalog_entries, fn entry ->
         name = entry.name
         has_key = AIBrain.LLM.Provider.has_api_key?(entry.id)
@@ -365,73 +386,242 @@ defmodule AIBrain.Web.Handlers.ProvidersHandler do
           env_key: entry.env_key,
           has_key: has_key,
           custom: false,
-          provider_type: name,
-          updated_at: nil
+          priority: Map.get(p_cfg, "priority", 0)
         }
       end)
-      |> then(fn catalog_providers ->
-        custom =
-          providers_cfg
-          |> Enum.reject(fn {n, _} -> Enum.any?(catalog_entries, fn e -> e.name == n end) end)
-          |> Enum.map(fn {n, cfg} ->
-            atom = String.to_atom(n)
-            %{id: n, name: n, enabled: Map.get(cfg, "enabled", true) and AIBrain.LLM.Provider.has_api_key?(atom),
-              base_url: Map.get(cfg, "base_url"), env_key: nil, has_key: AIBrain.LLM.Provider.has_api_key?(atom),
-              custom: true, provider_type: "openai", updated_at: nil}
-          end)
-        catalog_providers ++ custom
+
+    custom_providers =
+      providers_cfg
+      |> Enum.reject(fn {n, _} -> MapSet.member?(catalog_names, n) end)
+      |> Enum.map(fn {n, cfg} ->
+        atom = String.to_atom(n)
+        has_key = AIBrain.LLM.Provider.has_api_key?(atom)
+
+        %{
+          id: n,
+          name: n,
+          enabled: Map.get(cfg, "enabled", true) and has_key,
+          base_url: Map.get(cfg, "base_url"),
+          env_key: nil,
+          has_key: has_key,
+          custom: true,
+          priority: Map.get(cfg, "priority", 0)
+        }
       end)
-      |> Enum.sort_by(& {not (&1.enabled and &1.has_key), &1.name})
 
-    setup_required =
-      not Enum.any?(providers, fn p -> p.enabled and p.has_key end) or is_nil(default_model)
-
-    data = %{
-      providers: providers,
-      enabled_models: enabled_model_ids,
-      disabled_models: get_all_disabled_models(providers_cfg),
-      default_model: default_model,
-      setup_required: setup_required,
-      catalog: %{
-        source: "llmdb",
-        provider_count: length(catalog_entries),
-        model_count: estimate_model_count(),
-        refreshed_at: nil
-      }
-    }
-
-    :persistent_term.put(:ai_brain_model_settings, data)
-    data
+    catalog_providers ++ custom_providers
   end
 
-  # Only query LLMDB when we absolutely need model details (per-provider view).
-  # enabled_model_ids are computed lazily from config, without touching LLMDB.
-  defp get_enabled_model_ids(_providers_cfg) do
-    # All models default to enabled. Only disabled ones have entries in config.
-    # We can't enumerate 1330 models here. Instead return nil as sentinel
-    # meaning "all models enabled unless explicitly disabled in config".
-    :all
-  end
+  defp build_my_models(providers_cfg, _catalog_entries, default_model) do
+    providers_cfg
+    |> Enum.flat_map(fn {provider, _cfg} ->
+      enabled = AIBrain.Config.ProviderConfig.enabled_models(provider)
+      provider_atom = String.to_atom(provider)
 
-  defp get_all_disabled_models(providers_cfg) do
-    Enum.flat_map(providers_cfg, fn {provider, cfg} ->
-      (Map.get(cfg, "disabled_models", []) || [])
-      |> Enum.map(fn model -> "#{provider}:#{model}" end)
+      models =
+        case enabled do
+          :all ->
+            try do
+              AIBrain.Provider.Catalog.models_for_provider(provider_atom)
+            rescue
+              _ -> []
+            end
+
+          model_ids when is_list(model_ids) ->
+            model_ids
+            |> Enum.map(fn model_id ->
+              try do
+                case LLMDB.model(provider_atom, model_id) do
+                  {:ok, m} ->
+                    %{
+                      "id" => m.id,
+                      "name" => m.name || m.id,
+                      "full_id" => "#{provider}:#{m.id}",
+                      "provider" => provider,
+                      "context_length" => get_in(m, [Access.key(:limits), Access.key(:context)]),
+                      "max_output_tokens" => max_output_from_model(m),
+                      "input_modalities" => modality_list(m, :input),
+                      "output_modalities" => modality_list(m, :output),
+                      "description" => m.name || m.id
+                    }
+
+                  _ ->
+                    %{
+                      "id" => model_id,
+                      "name" => model_id,
+                      "full_id" => "#{provider}:#{model_id}",
+                      "provider" => provider,
+                      "context_length" => nil,
+                      "max_output_tokens" => nil,
+                      "input_modalities" => ["text"],
+                      "output_modalities" => ["text"],
+                      "description" => model_id
+                    }
+                end
+              rescue
+                _ ->
+                  %{
+                    "id" => model_id,
+                    "name" => model_id,
+                    "full_id" => "#{provider}:#{model_id}",
+                    "provider" => provider,
+                    "context_length" => nil,
+                    "max_output_tokens" => nil,
+                    "input_modalities" => ["text"],
+                    "output_modalities" => ["text"],
+                    "description" => model_id
+                  }
+              end
+            end)
+        end
+
+      Enum.map(models, fn m ->
+        full_id = m["full_id"] || "#{provider}:#{m["id"]}"
+
+        %{
+          id: m["id"],
+          name: m["name"],
+          full_id: full_id,
+          provider: provider,
+          context_length: m["context_length"],
+          max_output_tokens: m["max_output_tokens"],
+          input_modalities: m["input_modalities"] || ["text"],
+          output_modalities: m["output_modalities"] || ["text"],
+          description: m["description"] || "",
+          enabled: true,
+          default: full_id == default_model
+        }
+      end)
     end)
   end
 
-  defp estimate_model_count, do: 1330
+  defp max_output_from_model(model) do
+    get_in(model, [Access.key(:limits), Access.key(:output)])
+  end
+
+  defp modality_list(model, direction) do
+    case get_in(model, [Access.key(:modalities), direction]) do
+      nil -> ["text"]
+      list when is_list(list) -> Enum.map(list, &to_string/1)
+      _ -> ["text"]
+    end
+  end
 
   @doc """
-  GET /api/v1/providers/:id/models — list models for ONE provider.
-  This is the only endpoint that queries LLMDB. Called per-provider, lazily.
+  PUT /api/v1/my-models/models/:provider/:model — enable a model.
+  """
+  def handle_my_models_enable_model(conn, provider, model) do
+    AIBrain.Config.ProviderConfig.enable_model(provider, model)
+    json_response(conn, 200, %{ok: true, provider: provider, model: model, enabled: true})
+  end
+
+  @doc """
+  DELETE /api/v1/my-models/models/:provider/:model — disable a model.
+  """
+  def handle_my_models_disable_model(conn, provider, model) do
+    AIBrain.Config.ProviderConfig.disable_model(provider, model)
+
+    # If this was the default model, clear it
+    case AIBrain.Data.SystemSetting.default_llm_model() do
+      {^provider, ^model} ->
+        AIBrain.Data.SystemSetting.set_default_llm_model({nil, nil})
+
+      _ ->
+        :ok
+    end
+
+    json_response(conn, 200, %{ok: true, provider: provider, model: model, enabled: false})
+  end
+
+  @doc """
+  PUT /api/v1/my-models/default — set default model.
+  Body: { provider, model }
+  """
+  def handle_my_models_set_default(conn, params) do
+    provider = params["provider"]
+    model = params["model"]
+
+    if is_binary(provider) and is_binary(model) do
+      AIBrain.Data.SystemSetting.set_default_llm_model({provider, model})
+      json_response(conn, 200, %{ok: true, provider: provider, model: model})
+    else
+      json_response(conn, 400, %{error: "provider and model are required"})
+    end
+  end
+
+  @doc """
+  PATCH /api/v1/my-models/providers/:id — configure a provider.
+  Body: { enabled, base_url?, priority? }
+  """
+  def handle_my_models_configure_provider(conn, id, params) do
+    enabled = params["enabled"]
+
+    if enabled == true do
+      AIBrain.Config.ProviderConfig.enable_provider(id)
+    else
+      AIBrain.Config.ProviderConfig.disable_provider(id)
+    end
+
+    if base_url = params["base_url"] do
+      AIBrain.Config.ProviderConfig.set_base_url(id, base_url)
+    end
+
+    if priority = params["priority"] do
+      AIBrain.Config.ProviderConfig.set_provider_priority(id, priority)
+    end
+
+    json_response(conn, 200, %{ok: true, id: id})
+  end
+
+  @doc """
+  POST /api/v1/my-models/credentials — store an API key.
+  Body: { provider, api_key }
+  """
+  def handle_my_models_store_credential(conn, params) do
+    provider = params["provider"]
+    api_key = params["api_key"]
+
+    if is_nil(provider) or provider == "" do
+      json_response(conn, 400, %{error: "Provider name required"})
+    else
+      atom = String.to_atom(provider)
+      AIBrain.LLM.Provider.put_api_key(atom, api_key)
+      AIBrain.Config.ProviderConfig.enable_provider(provider)
+      json_response(conn, 200, %{ok: true, provider: provider})
+    end
+  end
+
+  @doc """
+  DELETE /api/v1/my-models/providers/:id — delete a provider config.
+  """
+  def handle_my_models_delete_provider(conn, id) do
+    atom = String.to_atom(id)
+    AIBrain.LLM.Provider.put_api_key(atom, "")
+    AIBrain.Config.ProviderConfig.disable_provider(id)
+    json_response(conn, 200, %{ok: true, id: id})
+  end
+
+  # ── Catalog refresh ──────────────────────────────────────
+
+  @doc """
+  POST /api/v1/catalog/refresh — reload LLMDB snapshot.
+  """
+  def handle_catalog_refresh(conn) do
+    try do
+      LLMDB.load()
+    rescue
+      _ -> :ok
+    end
+
+    AIBrain.Config.ProviderConfig.cache_invalidate()
+    json_response(conn, 200, %{ok: true})
+  end
+
+  @doc """
+  GET /api/v1/providers/:id/models — list models for ONE provider from catalog.
   """
   def handle_list_models(conn, id) do
     provider_atom = String.to_atom(id)
-    config = AIBrain.Config.ProviderConfig.load_config()
-    providers_cfg = Map.get(config, "providers", %{})
-    p_cfg = Map.get(providers_cfg, id, %{})
-    disabled_models = Map.get(p_cfg, "disabled_models", [])
 
     default_model =
       case AIBrain.Data.SystemSetting.default_llm_model() do
@@ -443,17 +633,18 @@ defmodule AIBrain.Web.Handlers.ProvidersHandler do
       try do
         AIBrain.Provider.Catalog.models_for_provider(provider_atom)
         |> Enum.map(fn m ->
-          model_name = m["name"]
+          model_name = m["id"]
           %{
-            id: m["id"],
-            name: model_name,
+            id: model_name,
+            name: m["name"],
+            full_id: m["full_id"],
             provider: m["provider"],
             context_length: m["context_length"],
             max_output_tokens: m["max_output_tokens"],
             input_modalities: m["input_modalities"] || ["text"],
             output_modalities: m["output_modalities"] || ["text"],
             description: m["description"] || "",
-            enabled: model_name not in disabled_models,
+            enabled: AIBrain.Config.ProviderConfig.model_enabled?(id, model_name),
             default: model_name == default_model
           }
         end)
@@ -462,115 +653,6 @@ defmodule AIBrain.Web.Handlers.ProvidersHandler do
       end
 
     json_response(conn, 200, %{ok: true, provider: id, models: models})
-  end
-
-  @doc """
-  POST /api/v1/settings/providers — configure a provider.
-  Body: { name, enabled, base_url?, custom?, provider_type? }
-  """
-  def handle_configure_provider(conn, params) do
-    name = params["name"]
-    enabled = params["enabled"]
-    base_url = params["base_url"]
-
-    if is_nil(name) or name == "" do
-      json_response(conn, 400, %{error: "Provider name required"})
-    else
-      if enabled == true do
-        AIBrain.Config.ProviderConfig.enable_provider(name)
-      else
-        AIBrain.Config.ProviderConfig.disable_provider(name)
-      end
-
-      if base_url do
-        AIBrain.Config.ProviderConfig.set_base_url(name, base_url)
-      end
-
-      # Invalidate cache and return updated settings
-      model_settings_cache_invalidate()
-      json_response(conn, 200, compute_and_cache())
-    end
-  end
-
-  @doc """
-  POST /api/v1/settings/credentials — store an API key.
-  Body: { provider, api_key }
-  """
-  def handle_store_credential(conn, params) do
-    provider = params["provider"]
-    api_key = params["api_key"]
-
-    if is_nil(provider) or provider == "" do
-      json_response(conn, 400, %{error: "Provider name required"})
-    else
-      atom = String.to_atom(provider)
-      AIBrain.LLM.Provider.put_api_key(atom, api_key)
-      AIBrain.Config.ProviderConfig.enable_provider(provider)
-
-      model_settings_cache_invalidate()
-      json_response(conn, 200, compute_and_cache())
-    end
-  end
-
-  @doc """
-  DELETE /api/v1/settings/providers/:name — delete a provider.
-  """
-  def handle_delete_provider_settings(conn, name) do
-    atom = String.to_atom(name)
-    AIBrain.LLM.Provider.put_api_key(atom, "")
-    AIBrain.Config.ProviderConfig.disable_provider(name)
-
-    model_settings_cache_invalidate()
-    json_response(conn, 200, compute_and_cache())
-  end
-
-  @doc """
-  POST /api/v1/settings/model-policy — update enabled_models + default_model.
-  Body: { toggle_model: "provider:model", enabled: bool }  ← O(1) single toggle
-        { enabled_models: [...], default_model: "provider:model" }  ← legacy full sync
-  """
-  def handle_update_model_policy(conn, params) do
-    default_model = params["default_model"]
-    toggle_model = params["toggle_model"]
-
-    # Single-model toggle path: O(1) — no iteration over catalog
-    if is_binary(toggle_model) and toggle_model != "" do
-      enabled = params["enabled"] != false
-      AIBrain.Config.ProviderConfig.toggle_model(toggle_model, enabled)
-    end
-
-    # Update default model
-    if default_model do
-      case String.split(default_model, ":", parts: 2) do
-        [p, m] -> AIBrain.Data.SystemSetting.set_default_llm_model({p, m})
-        _ -> :ok
-      end
-    end
-
-    model_settings_cache_invalidate()
-    json_response(conn, 200, compute_and_cache())
-  end
-
-  defp model_settings_cache_invalidate do
-    :persistent_term.erase(:ai_brain_model_settings)
-  rescue
-    _ -> :ok
-  end
-
-  @doc """
-  POST /api/v1/settings/catalog/refresh — reload LLMDB snapshot and refresh catalog.
-  """
-  def handle_refresh_catalog(conn) do
-    # Reload the model database to pick up any new models
-    try do
-      LLMDB.load()
-    rescue
-      _ -> :ok
-    end
-
-    model_settings_cache_invalidate()
-    AIBrain.Config.ProviderConfig.cache_invalidate()
-    json_response(conn, 200, compute_and_cache())
   end
 
   # -- Private helpers --

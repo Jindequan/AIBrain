@@ -69,7 +69,7 @@ export default function ModelSelector({ models = [], selectedModelSpec, onSelect
                 {provider}
               </div>
               {providerModels.map(m => {
-                const modelSpec = `${provider}:${m.name}`
+                const modelSpec = `${provider}:${m.id}`
                 const isSelected = modelSpec === selectedModelSpec
                 return (
                   <button

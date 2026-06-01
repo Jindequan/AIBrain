@@ -1,11 +1,14 @@
-# AIBrain
+# AIbrain
 
 > Self-hosted AI assistant with tool-calling, skills, and autonomous agents — built with Elixir and React.
+
+![Chat screenshot](screenshots/chat.png)
 
 ## Features
 
 - **Multi-turn chat** with streaming SSE & WebSocket
-- **Tool system** — bash, file read/write/edit, web search, image generation, and custom tools
+- **Approval system** — interactive permission modal with Proxy auto-approval, session trust, and configurable autonomy levels (Suggest / Assist / Execute)
+- **Tool system** — bash, file read/write/edit, web search, image generation, git, glob, and more
 - **Skill-driven architecture** — loadable AI skills for extensible capabilities
 - **Autonomous agent runtime** with approval workflows and configurable autonomy levels
 - **Goal & task management** with cron scheduling and progress tracking
@@ -34,7 +37,7 @@ Open `http://localhost:5200`. Configure a provider and API key on the Providers 
 ## Architecture
 
 ```
-AIBrain/
+AIbrain/
 ├── server/          # Elixir backend — Plug.Router + SQLite
 │   ├── lib/ai_brain/agent_runtime/  # Orchestrator, run lifecycle, authorization
 │   ├── lib/ai_brain/llm/            # Provider management, streaming client
@@ -44,6 +47,7 @@ AIBrain/
 │   └── lib/ai_brain/memory/         # Semantic memory, conversation distillation
 ├── web/             # React frontend — Vite + Zustand + Tailwind
 │   └── src/pages/   # Chat, Providers, Runs, Goals, Settings, Memory...
+├── screenshots/     # Screenshots
 ├── docs/            # Architecture documentation
 └── scripts/         # Development helper scripts
 ```
@@ -56,6 +60,6 @@ See `CONTRIBUTING.md` for guidelines. Pull requests are welcome.
 
 ## License
 
-AIBrain is free software licensed under the [GNU Affero General Public License v3.0](LICENSE).
+AIbrain is free software licensed under the [GNU Affero General Public License v3.0](LICENSE).
 
-If you use AIBrain to provide a network service, you must make the source code available to users of that service.
+If you use AIbrain to provide a network service, you must make the source code available to users of that service.

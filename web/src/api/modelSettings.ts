@@ -1,7 +1,27 @@
 import { request } from './client'
 
-// Model settings types (matching backend ModelSettingsViewModel)
-export interface ProviderSettings {
+// ── Types ──────────────────────────────────────────────────
+
+export interface CatalogProvider {
+  id: string
+  name: string
+  base_url?: string
+  env_key?: string
+}
+
+export interface CatalogModel {
+  id: string
+  name: string
+  full_id: string
+  provider: string
+  context_length?: number
+  max_output_tokens?: number
+  input_modalities: string[]
+  output_modalities: string[]
+  description: string
+}
+
+export interface MyProvider {
   id: string
   name: string
   enabled: boolean
@@ -9,13 +29,13 @@ export interface ProviderSettings {
   env_key?: string
   has_key: boolean
   custom: boolean
-  provider_type: string
-  updated_at?: string
+  priority: number
 }
 
-export interface ModelSettings {
-  id: string           // "provider:model_name"
+export interface MyModel {
+  id: string
   name: string
+  full_id: string
   provider: string
   context_length?: number
   max_output_tokens?: number
@@ -26,61 +46,80 @@ export interface ModelSettings {
   default: boolean
 }
 
-export interface ModelSettingsViewModel {
-  providers: ProviderSettings[]
-  enabled_models: string[] | ':all'   // ':all' means all models enabled unless disabled
-  disabled_models: string[]            // models explicitly disabled by user
+export interface MyModelsResponse {
+  providers: MyProvider[]
+  models: MyModel[]
   default_model: string | null
   setup_required: boolean
-  catalog: {
-    source: string
-    provider_count: number
-    model_count: number
-    refreshed_at: string | null
-  }
 }
 
-export const modelSettingsApi = {
-  get: (signal?: AbortSignal) =>
-    request<ModelSettingsViewModel>('/api/v1/model-settings', { signal }),
+export interface ProviderModelsResponse {
+  ok: boolean
+  provider: string
+  models: (CatalogModel & { enabled: boolean; default: boolean })[]
+}
 
-  configureProvider: (body: {
-    name: string; enabled: boolean; base_url?: string;
-    custom?: boolean; provider_type?: string;
-  }) =>
-    request<ModelSettingsViewModel>('/api/v1/settings/providers', {
-      method: 'POST',
-      body: JSON.stringify(body),
+// ── Catalog API (read-only LLMDB) ─────────────────────────
+
+export const catalogApi = {
+  listProviders: (signal?: AbortSignal) =>
+    request<{ providers: CatalogProvider[] }>('/api/v1/catalog/providers', { signal }),
+
+  listModels: (providerId: string, signal?: AbortSignal) =>
+    request<ProviderModelsResponse>(
+      `/api/v1/catalog/providers/${encodeURIComponent(providerId)}/models`,
+      { signal }
+    ),
+
+  refresh: () =>
+    request<{ ok: true }>('/api/v1/catalog/refresh', { method: 'POST' }),
+}
+
+// ── My Models API (user config) ───────────────────────────
+
+export const myModelsApi = {
+  get: (signal?: AbortSignal) =>
+    request<MyModelsResponse>('/api/v1/my-models', { signal }),
+
+  enableModel: (provider: string, model: string) =>
+    request<{ ok: boolean; provider: string; model: string; enabled: true }>(
+      `/api/v1/my-models/models/${encodeURIComponent(provider)}/${encodeURIComponent(model)}`,
+      { method: 'PUT' }
+    ),
+
+  disableModel: (provider: string, model: string) =>
+    request<{ ok: boolean; provider: string; model: string; enabled: false }>(
+      `/api/v1/my-models/models/${encodeURIComponent(provider)}/${encodeURIComponent(model)}`,
+      { method: 'DELETE' }
+    ),
+
+  setDefault: (provider: string, model: string) =>
+    request<{ ok: boolean; provider: string; model: string }>('/api/v1/my-models/default', {
+      method: 'PUT',
+      body: JSON.stringify({ provider, model }),
     }),
 
+  configureProvider: (id: string, params: { enabled: boolean; base_url?: string; priority?: number }) =>
+    request<{ ok: boolean; id: string }>(
+      `/api/v1/my-models/providers/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify(params) }
+    ),
+
   storeCredential: (provider: string, api_key: string) =>
-    request<ModelSettingsViewModel>('/api/v1/settings/credentials', {
+    request<{ ok: boolean; provider: string }>('/api/v1/my-models/credentials', {
       method: 'POST',
       body: JSON.stringify({ provider, api_key }),
     }),
 
-  deleteProvider: (name: string) =>
-    request<ModelSettingsViewModel>(`/api/v1/settings/providers/${encodeURIComponent(name)}`, {
-      method: 'DELETE',
-    }),
+  deleteProvider: (id: string) =>
+    request<{ ok: boolean; id: string }>(
+      `/api/v1/my-models/providers/${encodeURIComponent(id)}`,
+      { method: 'DELETE' }
+    ),
 
-  updateModelPolicy: (body: { enabled_models?: string[]; disabled_models?: string[]; toggle_model?: string; enabled?: boolean; default_model?: string | null }) =>
-    request<ModelSettingsViewModel>('/api/v1/settings/model-policy', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-
-  toggleModel: (modelId: string, enabled: boolean, defaultModel?: string | null) =>
-    request<ModelSettingsViewModel>('/api/v1/settings/model-policy', {
-      method: 'POST',
-      body: JSON.stringify({ toggle_model: modelId, enabled, default_model: defaultModel }),
-    }),
-
-  refreshCatalog: () =>
-    request<ModelSettingsViewModel>('/api/v1/settings/catalog/refresh', { method: 'POST' }),
-
+  // Convenience: per-provider models with enabled/default state merged from user config
   fetchProviderModels: (providerId: string) =>
-    request<{ ok: boolean; provider: string; models: ModelSettings[] }>(
+    request<ProviderModelsResponse>(
       `/api/v1/providers/${encodeURIComponent(providerId)}/models`
     ),
 }

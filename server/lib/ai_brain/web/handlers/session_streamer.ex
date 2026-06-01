@@ -112,23 +112,7 @@ defmodule AIBrain.Web.Handlers.SessionStreamer do
 
           conn
 
-        {:ok, %{run_id: run_id, result: {:suspended, meta}}} ->
-          Plug.Conn.chunk(
-            conn,
-            sse_event("suspended", %{
-              session_id: session_id,
-              run_id: run_id,
-              suspended: true,
-              status: Map.get(meta, :status, "waiting_approval"),
-              reason: Map.get(meta, :reason, "approval_required"),
-              interaction_id: Map.get(meta, :interaction_id),
-              approval_id: Map.get(meta, :approval_id) || Map.get(meta, :interaction_id),
-              tool_name: Map.get(meta, :tool_name)
-            })
-          )
-
-          conn
-
+        # unreachable — auth blocks in AuthorizationWorkflow, approval flows via Bus
         {:error, :session_not_found} ->
           Plug.Conn.chunk(
             conn,

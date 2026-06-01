@@ -27,8 +27,8 @@ export const useInteractionStore = create<InteractionStore>((set, get) => ({
   addInteraction: (interaction) => {
     const { queue } = get()
 
-    // Only add if should be displayed (pending or need_manual)
-    if (interaction.status !== 'pending' && interaction.status !== 'need_manual') {
+    // Only add if should be displayed (pending, proxy_running, or need_manual)
+    if (interaction.status !== 'pending' && interaction.status !== 'proxy_running' && interaction.status !== 'need_manual') {
       return
     }
 
@@ -54,6 +54,7 @@ export const useInteractionStore = create<InteractionStore>((set, get) => ({
     const filteredQueue = updatedQueue.filter(
       (interaction) =>
         interaction.status === 'pending' ||
+        interaction.status === 'proxy_running' ||
         interaction.status === 'need_manual'
     )
 
@@ -92,9 +93,9 @@ export const useInteractionStore = create<InteractionStore>((set, get) => ({
   },
 
   setQueue: (interactions) => {
-    // Filter to only show pending and need_manual
+    // Filter to only show pending, proxy_running, and need_manual
     const filtered = interactions.filter(
-      (i) => i.status === 'pending' || i.status === 'need_manual'
+      (i) => i.status === 'pending' || i.status === 'proxy_running' || i.status === 'need_manual'
     )
     set({ queue: filtered })
   },

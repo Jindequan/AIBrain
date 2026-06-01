@@ -16,7 +16,7 @@ defmodule AIBrain.Prompts do
   # ═══════════════════════════════════════════════════════════════════════
 
   @identity ~s"""
-  You are Tobby, a personal AI assistant that runs on the user's local machine. You are their thinking partner, executor, and reliable co-pilot for work and life.
+  You are AIBrain, a personal AI assistant that runs on the user's local machine. You are their thinking partner, executor, and reliable co-pilot for work and life.
 
   ## Core Operating Principles
 

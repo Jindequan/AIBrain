@@ -144,12 +144,17 @@ export function useChatWebSocket({ subscribe }) {
         const variant = msg.event === 'interaction_needed' || msg.event === 'interaction_escalated' ? 'warning' : 'info'
         const approval = approvalPayload(msg)
         const detail = msg.data?.name || approval.title || approval.reason || ''
-        toast.addToast({ title, message: detail, variant })
+
+        // Approval/escale events use the global InteractionModal — skip toast and system notification
+        const isInteractionEvent = msg.event === 'interaction_needed' || msg.event === 'interaction_escalated'
+        if (!isInteractionEvent) {
+          toast.addToast({ title, message: detail, variant })
+          if (window.electronAPI?.notify) {
+            window.electronAPI.notify(title, detail || msg.data?.monitor_id || '')
+          }
+        }
 
         if (msg.event === 'interaction_needed') {
-          if (isCurrentApproval(approval, store)) {
-            store.addApprovalRequiredMessage(approval)
-          }
           window.dispatchEvent(new CustomEvent('interaction-needed', { detail: { interaction_id: approval.interaction_id } }))
         } else if (msg.event === 'interaction_resolved') {
           if (isCurrentApproval(approvalPayload(msg), store)) {
@@ -160,24 +165,10 @@ export function useChatWebSocket({ subscribe }) {
           window.dispatchEvent(new CustomEvent('interaction-escalated', { detail: { interaction_id: msg.data?.interaction_id } }))
         }
 
-        if (window.electronAPI?.notify) {
-          window.electronAPI.notify(title, detail || msg.data?.monitor_id || '')
-        }
-
       } else if (msg.type === 'error') {
         if (!isActiveChatMessage) return
         toast.addToast({ title: 'Query failed', message: msg.error || 'Query failed', variant: 'error' })
         store.finishStreaming(msg.error || 'Query failed')
-
-      } else if (msg.type === 'suspended') {
-        if (!isActiveChatMessage) return
-        const approval = approvalPayload(msg)
-        store.addApprovalRequiredMessage(approval)
-        store.resumeStreamingAfterApproval()
-        toast.addToast({ title: 'Approval required', message: approval.reason, variant: 'warning' })
-        // Don't invalidate the active session — local approval message must not be overwritten.
-        queryClient.invalidateQueries({ queryKey: ['sessions'] })
-        queryClient.invalidateQueries({ queryKey: ['interactions'] })
 
       } else if (msg.type === 'ws_disconnected') {
         toast.addToast({ title: 'Connection lost', message: 'WebSocket connection lost. Reconnecting...', variant: 'warning' })

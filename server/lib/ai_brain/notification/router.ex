@@ -70,15 +70,17 @@ defmodule AIBrain.Notification.Router do
   end
 
   @impl true
-  def handle_info({:bus_message, event}, state) when is_map(event) do
+  def handle_info({:bus_event, event}, state) when is_map(event) do
     handle_bus_event(event, state)
     {:noreply, state}
   end
 
-  # Catch-all for bus messages we don't care about
-  def handle_info({:bus_message, _}, state) do
+  # Catch-all for bus events we don't care about
+  def handle_info({:bus_event, _}, state) do
     {:noreply, state}
   end
+
+  def handle_info({:bus_message, _}, state), do: {:noreply, state}
 
   def handle_info(_msg, state) do
     {:noreply, state}

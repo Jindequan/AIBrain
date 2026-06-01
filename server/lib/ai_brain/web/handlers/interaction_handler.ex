@@ -38,9 +38,20 @@ defmodule AIBrain.Web.Handlers.InteractionHandler do
   def handle_resolve(conn, id, params) do
     result = Map.get(params, "result", %{})
     resolved_by = Map.get(params, "resolved_by", AIBrain.Data.Users.default_user_id())
+    trust_session = Map.get(result, "trust_session", false)
 
     case InteractionFacade.resolve(id, result, resolved_by) do
       :ok ->
+        if trust_session do
+          interaction = Interactions.get(id)
+          if interaction do
+            session_id = get_in(interaction.context, ["session_id"])
+            if session_id do
+              AIBrain.AgentRuntime.AuthorizationWorkflow.set_session_trusted(session_id)
+            end
+          end
+        end
+
         json_response(conn, 200, %{message: "Resolved", id: id})
 
       {:error, reason} ->

@@ -200,8 +200,9 @@ defmodule AIBrain.Engine.Executor do
             ctx = Map.put(ctx, :max_context_tokens, AIBrain.Provider.Info.model_context_window(provider, model_name))
             ctx = Map.put(ctx, :model, model_name)
 
-            # Record the selected model in the transaction for later persistence
-            tx = %{tx | model: model_name}
+            # Store provider-prefixed model for retry routing — plain model_name
+            # fails in :model mode on the next turn_loop iteration.
+            tx = %{tx | model: "#{provider.name}:#{model_name}"}
 
             messages =
               Loop.prepare_messages(
@@ -262,6 +263,9 @@ defmodule AIBrain.Engine.Executor do
                 {:error, :transport_error}
 
               {:error, reason, _detail} ->
+                {:error, reason}
+
+              {:error, reason} ->
                 {:error, reason}
             end
         end

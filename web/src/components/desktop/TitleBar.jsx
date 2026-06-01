@@ -52,7 +52,7 @@ export default function TitleBar() {
         {/* App icon + title */}
         <div className="flex items-center gap-2 px-3">
           <img src="/logo.png" alt="" className="w-4 h-4 rounded" />
-          <span className="text-xs font-medium text-gray-700">AIBrain</span>
+          <span className="text-xs font-medium text-gray-700">AIbrain</span>
         </div>
 
         {/* Spacer */}

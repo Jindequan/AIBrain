@@ -45,8 +45,9 @@ defmodule AIBrain.Provider.Catalog do
     LLMDB.models(provider_id)
     |> Enum.map(fn model ->
       %{
-        "id" => "#{provider_str}:#{model.id}",
-        "name" => name(model),
+        "id" => model.id,
+        "name" => model.name || model.id,
+        "full_id" => "#{provider_str}:#{model.id}",
         "provider" => provider_str,
         "context_length" => get_in(model, [Access.key(:limits), Access.key(:context)]),
         "max_output_tokens" => max_output(model),

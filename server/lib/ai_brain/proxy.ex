@@ -70,7 +70,17 @@ defmodule AIBrain.Proxy do
 
   def handle_info({:EXIT, pid, reason}, state) do
     if Map.has_key?(state.pending_tasks, pid) do
+      kind_ctx = state.pending_tasks[pid]
       Logger.warning("Proxy: async LLM task exited: #{inspect(reason)}")
+
+      # If this was an interaction evaluation, escalate to human on crash
+      case kind_ctx do
+        {:interaction, interaction_id, _type, _versions, _autonomy?} ->
+          escalate_to_human(interaction_id, "proxy_llm_crashed")
+        _ ->
+          :ok
+      end
+
       {:noreply, update_in(state.pending_tasks, &Map.delete(&1, pid))}
     else
       {:noreply, state}

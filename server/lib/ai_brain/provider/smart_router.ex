@@ -72,12 +72,9 @@ defmodule AIBrain.Provider.SmartRouter do
   defp select_model_by_tier(_router, tier), do: {:error, {:invalid_tier, tier}}
 
   defp try_models_in_tier(router, [model | rest], tier) do
-    case Router.select(router, "openai", model.name) do
-      {:ok, provider} ->
-        {:ok, provider, model.name}
-
-      {:error, {:all_unavailable, _soonest}} ->
-        try_models_in_tier(router, rest, tier)
+    case Router.select(router, model: model.name) do
+      {:ok, provider, model_name} ->
+        {:ok, provider, model_name}
 
       {:error, _reason} ->
         try_models_in_tier(router, rest, tier)

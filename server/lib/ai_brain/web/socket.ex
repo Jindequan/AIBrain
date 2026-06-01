@@ -119,6 +119,16 @@ defmodule AIBrain.Web.Socket do
 
                 Enum.each(messages, fn msg -> store.append_message(store, session_id, msg) end)
 
+                if Map.get(payload, "model", "") not in [nil, ""] do
+                  AIBrain.ConversationLog.put_session_meta(session_id, "requested_model", payload["model"])
+                end
+                if Map.get(payload, "chat_mode", "") not in [nil, ""] do
+                  AIBrain.ConversationLog.put_session_meta(session_id, "chat_mode", payload["chat_mode"])
+                end
+                if Map.get(payload, "run_mode", "") not in [nil, ""] do
+                  AIBrain.ConversationLog.put_session_meta(session_id, "run_mode", payload["run_mode"])
+                end
+
                 run_query_inline(
                   ws_pid,
                   store,
@@ -235,22 +245,9 @@ defmodule AIBrain.Web.Socket do
               text: text
             }
 
-          {:ok, %{run_id: run_id, result: {:suspended, meta}}} ->
-            data = Map.put(meta, :session_id, session_id)
-
-            %{
-              type: "suspended",
-              success: false,
-              session_id: session_id,
-              run_id: Map.get(meta, :run_id) || run_id,
-              suspended: true,
-              status: Map.get(meta, :status, "waiting_approval"),
-              reason: Map.get(meta, :reason, "approval_required"),
-              approval_id: Map.get(meta, :approval_id) || Map.get(meta, :interaction_id),
-              interaction_id: Map.get(meta, :interaction_id),
-              tool_name: Map.get(meta, :tool_name),
-              data: data
-            }
+          # Authorization blocks inside AuthorizationWorkflow.wait_for_approval.
+          # The {:suspended, meta} path is unreachable — approval flows through
+          # Bus notifications (interaction_needed → InteractionModal → interaction_resolved).
 
           {:ok, %{run_id: run_id, result: {:error, reason}}} ->
             Logger.error("WebSocket query failed for session #{session_id}: #{inspect(reason)}")
@@ -293,27 +290,43 @@ defmodule AIBrain.Web.Socket do
   def handle_info({:session_event, session_id, event}, state) do
     data = format_event(event, session_id)
     {:push, [{:text, data}], state}
+  rescue
+    e ->
+      Logger.error("WebSocket session_event handler crashed: #{Exception.message(e)}")
+      {:ok, state}
   end
 
   # Global Bus events — forward notification-relevant ones to frontend
-  def handle_info({:bus_message, event}, state) when is_map(event) do
+  def handle_info({:bus_event, event}, state) when is_map(event) do
     type = event[:type] || event["type"]
 
     if type in ~w(scheduler_fired run_completed run_failed task_completed task_failed interaction_needed interaction_resolved interaction_escalated)a do
       data =
-        Jason.encode!(%{
-          type: "notification",
-          event: to_string(type),
-          data: event |> Map.drop([:type, :__struct__])
-        })
+        try do
+          Jason.encode!(%{
+            type: "notification",
+            event: to_string(type),
+            data: event |> Map.drop([:type, :__struct__])
+          })
+        rescue
+          e ->
+            Logger.error("WebSocket bus_event JSON encoding failed: #{Exception.message(e)}")
+            Jason.encode!(%{type: "notification", event: to_string(type), data: %{}})
+        end
 
       {:push, [{:text, data}], state}
     else
       {:ok, state}
     end
+  rescue
+    e ->
+      Logger.error("WebSocket bus_event handler crashed: #{Exception.message(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}")
+      {:ok, state}
   end
 
-  # Catch-all for bus messages
+  # Catch-all for bus events
+  def handle_info({:bus_event, _}, state), do: {:ok, state}
+
   def handle_info({:bus_message, _}, state), do: {:ok, state}
 
   def handle_info({:run_event, run_id, event}, state) do
@@ -321,16 +334,28 @@ defmodule AIBrain.Web.Socket do
       nil -> {:ok, state}
       data -> {:push, [{:text, data}], state}
     end
+  rescue
+    e ->
+      Logger.error("WebSocket run_event handler crashed: #{Exception.message(e)}")
+      {:ok, state}
   end
 
   @impl WebSock
   def handle_info({:ws_send, data}, state) do
     {:push, [{:text, data}], state}
+  rescue
+    e ->
+      Logger.error("WebSocket ws_send handler crashed: #{Exception.message(e)}")
+      {:ok, state}
   end
 
   def handle_info({:send_event, event}, state) do
     data = Jason.encode!(event)
     {:push, [{:text, data}], state}
+  rescue
+    e ->
+      Logger.error("WebSocket send_event handler crashed: #{Exception.message(e)}")
+      {:ok, state}
   end
 
   def handle_info({:monitor_notification, event}, state) do
@@ -348,6 +373,16 @@ defmodule AIBrain.Web.Socket do
       })
 
     {:push, [{:text, data}], state}
+  rescue
+    e ->
+      Logger.error("WebSocket monitor_notification handler crashed: #{Exception.message(e)}")
+      {:ok, state}
+  end
+
+  # Catch-all: any unhandled message must not crash the WebSocket process
+  def handle_info(msg, state) do
+    Logger.warning("WebSocket received unhandled message: #{inspect(msg)}")
+    {:ok, state}
   end
 
   @impl WebSock
@@ -547,6 +582,9 @@ defmodule AIBrain.Web.Socket do
 
   defp normalize_tool_result(result) do
     case result do
+      {:ok, %AIBrain.Tool.Result{content: content, success: true}} -> {content, "success"}
+      {:ok, %AIBrain.Tool.Result{content: content, success: false}} -> {content, "error"}
+      {:ok, %AIBrain.Tool.Error{message: msg}} -> {msg, "error"}
       {:ok, output} when is_binary(output) -> {output, "success"}
       {:ok, output} when is_map(output) -> {inspect(output), "success"}
       {:error, reason} -> {format_tool_error(reason), "error"}

@@ -11,12 +11,14 @@ import {
   MessageCircle,
   Search,
   Palette,
+  Bot,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { VoiceInput } from './VoiceInput'
 import { DirPicker } from './DirPicker'
 import ModelSelector from './ModelSelector'
 import { goalsApi } from '../../api/goals.api'
+import { proxyApi } from '../../api/proxy.api'
 
 const MODE_OPTIONS = [
   { value: 'chat', runMode: 'interactive', label: 'Chat', Icon: MessageCircle },
@@ -45,6 +47,31 @@ export function ChatInput({
   const textareaHeightTimerRef = useRef(null)
   const [showGoals, setShowGoals] = useState(false)
   const [showMode, setShowMode] = useState(false)
+  const [proxyActive, setProxyActive] = useState(false)
+  const [proxyToggling, setProxyToggling] = useState(false)
+
+  const { data: proxyStatus } = useQuery({
+    queryKey: ['proxy-status'],
+    queryFn: () => proxyApi.status(),
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+  })
+
+  useEffect(() => {
+    if (proxyStatus?.active !== undefined) setProxyActive(proxyStatus.active)
+  }, [proxyStatus])
+
+  const handleToggleProxy = useCallback(async () => {
+    setProxyToggling(true)
+    try {
+      const res = await proxyApi.toggle(!proxyActive)
+      setProxyActive(res.active)
+    } catch (e) {
+      console.error('Failed to toggle proxy:', e)
+    } finally {
+      setProxyToggling(false)
+    }
+  }, [proxyActive])
   const [showAutonomy, setShowAutonomy] = useState(false)
 
   const { data: goalsData } = useQuery({
@@ -282,6 +309,22 @@ export function ChatInput({
               </div>
             )}
           </div>
+
+          {/* Proxy toggle */}
+          <button
+            onClick={handleToggleProxy}
+            disabled={proxyToggling}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium transition-colors border',
+              proxyActive
+                ? 'bg-green-500/10 text-green-600 border-green-500/30'
+                : 'bg-gray-100 dark:bg-gray-800 text-text-muted border-gray-200 dark:border-gray-700 hover:border-accent/30'
+            )}
+            title={proxyActive ? 'Proxy is auto-approving tools' : 'Proxy off — manual approval required'}
+          >
+            <Bot className={cn('w-3 h-3', proxyToggling && 'animate-pulse')} />
+            <span>{proxyActive ? 'Proxy ON' : 'Proxy OFF'}</span>
+          </button>
         </div>
       </div>
     </div>

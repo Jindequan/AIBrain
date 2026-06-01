@@ -3,7 +3,7 @@ import {
   Brain, Eye, EyeOff, KeyRound, Plus, RefreshCw, Search,
   Server, Star, Trash2,
 } from 'lucide-react'
-import { modelSettingsApi } from '../api/modelSettings'
+import { myModelsApi, catalogApi } from '../api/modelSettings'
 import { cn } from '../lib/utils'
 import { Button, IconButton } from '../components/ui/design'
 import { useToastStore } from '../store/toastStore'
@@ -44,7 +44,7 @@ export default function ProvidersPage() {
   const load = async (signal) => {
     try {
       setLoading(true)
-      const d = await modelSettingsApi.get(signal)
+      const d = await myModelsApi.get(signal)
       setData(d)
     } catch (err) {
       if (err?.name !== 'AbortError') setError(err?.message || 'Failed to load')
@@ -84,7 +84,7 @@ export default function ProvidersPage() {
     let cancelled = false
     setModelsLoading(true)
     setModelsError(null)
-    modelSettingsApi.fetchProviderModels(selected.id)
+    myModelsApi.fetchProviderModels(selected.id)
       .then(res => { if (!cancelled) { setProviderModels(res.models || []); if (res.models?.length === 0) setModelsError('No models found for this provider. If this is a custom provider, models must be added manually.') } })
       .catch(err => { if (!cancelled) { setProviderModels([]); setModelsError(err?.message || 'Failed to load models') } })
       .finally(() => { if (!cancelled) setModelsLoading(false) })
@@ -97,7 +97,7 @@ export default function ProvidersPage() {
       if (!q) return true
       return `${m.id} ${m.name} ${m.description}`.toLowerCase().includes(q)
     })
-  }, [data, selected, modelSearch])
+  }, [data, selected, modelSearch, providerModels])
 
   // ── Actions ──
 
@@ -110,12 +110,12 @@ export default function ProvidersPage() {
     }
     setOp(opId, true)
     try {
-      const result = await modelSettingsApi.configureProvider({
-        name: p.id, enabled: willBeEnabled,
+      await myModelsApi.configureProvider(p.id, {
+        enabled: willBeEnabled,
         base_url: baseUrlDraft[p.id] ?? p.base_url,
-        custom: p.custom, provider_type: p.provider_type,
+        priority: p.priority ?? 0,
       })
-      setData(result)
+      await load()
     } catch (err) {
       addToast({ title: 'Error', message: err?.message || 'Failed', variant: 'error' })
     } finally { setOp(opId, false) }
@@ -126,9 +126,9 @@ export default function ProvidersPage() {
     const opId = `key-${providerId}`
     setOp(opId, true)
     try {
-      const result = await modelSettingsApi.storeCredential(providerId, apiKey)
-      setData(result)
+      await myModelsApi.storeCredential(providerId, apiKey)
       setKeyInputs(p => ({ ...p, [providerId]: '' }))
+      await load()
       addToast({ title: 'Key saved', message: `API key for ${providerId} stored`, variant: 'success' })
     } catch (err) {
       addToast({ title: 'Error', message: err?.message || 'Failed to save key', variant: 'error' })
@@ -140,9 +140,9 @@ export default function ProvidersPage() {
     const opId = `del-${providerId}`
     setOp(opId, true)
     try {
-      const result = await modelSettingsApi.deleteProvider(providerId)
-      setData(result)
+      await myModelsApi.deleteProvider(providerId)
       if (selectedId === providerId) setSelectedId('')
+      await load()
     } catch (err) {
       addToast({ title: 'Error', message: err?.message || 'Failed to delete', variant: 'error' })
     } finally { setOp(opId, false) }
@@ -151,27 +151,31 @@ export default function ProvidersPage() {
   const handleToggleModel = async (modelId) => {
     if (!data || !selected) return
     const opId = `mdl-${modelId}`
-    const fullModelId = `${selected.id}:${modelId}`
 
-    // Check current enabled state: model is enabled if NOT in disabled_models
-    const currentlyEnabled = !(data.disabled_models || []).includes(fullModelId)
+    const model = providerModels.find(m => m.id === modelId)
+    const currentlyEnabled = model?.enabled ?? false
 
-    // Guard: don't disable the last enabled model unless user confirms
     if (currentlyEnabled) {
-      const totalEnabled = providerModels.length - (data.disabled_models || []).filter(d => d.startsWith(selected.id + ':')).length
-      if (totalEnabled <= 1) {
+      const enabledCount = providerModels.filter(m => m.enabled).length
+      if (enabledCount <= 1) {
         if (!window.confirm('This is the last enabled model. Disabling it will leave no model available. Continue?')) return
       }
     }
 
     setOp(opId, true)
     try {
-      const effectiveDefault = data.default_model === modelId && currentlyEnabled
-        ? null  // unset default if we're disabling the default model
-        : data.default_model
+      if (currentlyEnabled) {
+        await myModelsApi.disableModel(selected.id, modelId)
+      } else {
+        await myModelsApi.enableModel(selected.id, modelId)
+      }
 
-      const result = await modelSettingsApi.toggleModel(fullModelId, !currentlyEnabled, effectiveDefault)
-      setData(result)
+      // Refresh model list for this provider to reflect toggle state
+      const res = await myModelsApi.fetchProviderModels(selected.id)
+      setProviderModels(res.models || [])
+      // Refresh my-models for header/default state
+      const d = await myModelsApi.get()
+      setData(d)
     } catch (err) {
       addToast({ title: 'Error', message: err?.message || 'Failed', variant: 'error' })
     } finally { setOp(opId, false) }
@@ -182,8 +186,12 @@ export default function ProvidersPage() {
     const opId = `def-${modelId}`
     setOp(opId, true)
     try {
-      const result = await modelSettingsApi.updateModelPolicy({ default_model: modelId })
-      setData(result)
+      await myModelsApi.setDefault(selected.id, modelId)
+      await load()
+
+      // Refresh the per-provider model list for default marker
+      const res = await myModelsApi.fetchProviderModels(selected.id)
+      setProviderModels(res.models || [])
     } catch (err) {
       addToast({ title: 'Error', message: err?.message || 'Failed', variant: 'error' })
     } finally { setOp(opId, false) }
@@ -192,8 +200,8 @@ export default function ProvidersPage() {
   const handleRefreshCatalog = async () => {
     setOp('catalog', true)
     try {
-      const result = await modelSettingsApi.refreshCatalog()
-      setData(result)
+      await catalogApi.refresh()
+      await load()
     } catch (err) {
       addToast({ title: 'Error', message: err?.message || 'Failed to sync', variant: 'error' })
     } finally { setOp('catalog', false) }
@@ -204,20 +212,19 @@ export default function ProvidersPage() {
     const opId = 'add-custom'
     setOp(opId, true)
     try {
-      let result = await modelSettingsApi.configureProvider({
-        name: customName.trim(), enabled: true,
+      await myModelsApi.configureProvider(customName.trim(), {
+        enabled: true,
         base_url: customBaseUrl.trim() || undefined,
-        custom: true, provider_type: 'openai',
       })
       if (customKey.trim()) {
-        result = await modelSettingsApi.storeCredential(customName.trim(), customKey.trim())
+        await myModelsApi.storeCredential(customName.trim(), customKey.trim())
       }
-      setData(result)
       setSelectedId(customName.trim())
       setShowAddCustom(false)
       setCustomName('')
       setCustomBaseUrl('')
       setCustomKey('')
+      await load()
     } catch (err) {
       addToast({ title: 'Error', message: err?.message || 'Failed to add', variant: 'error' })
     } finally { setOp(opId, false) }
@@ -229,14 +236,11 @@ export default function ProvidersPage() {
     setOp(opId, true)
     try {
       const p = data.providers.find(x => x.id === providerId)
-      const result = await modelSettingsApi.configureProvider({
-        name: providerId,
+      await myModelsApi.configureProvider(providerId, {
         enabled: p?.enabled ?? true,
         base_url: baseUrl || undefined,
-        custom: p?.custom ?? false,
-        provider_type: p?.provider_type ?? 'openai',
       })
-      setData(result)
+      await load()
     } catch (err) {
       addToast({ title: 'Error', message: err?.message || 'Failed to save', variant: 'error' })
     } finally { setOp(opId, false) }
@@ -264,7 +268,7 @@ export default function ProvidersPage() {
         <div>
           <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Providers & Models</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            {data.catalog.provider_count} providers · {data.catalog.model_count} models from LLMDB
+            {data.providers.length} providers · {data.models.length} models configured
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -450,7 +454,7 @@ export default function ProvidersPage() {
                     <button
                       onClick={() => {
                         setModelsLoading(true)
-                        modelSettingsApi.fetchProviderModels(selected.id)
+                        myModelsApi.fetchProviderModels(selected.id)
                           .then(res => setProviderModels(res.models || []))
                           .catch(() => setProviderModels([]))
                           .finally(() => setModelsLoading(false))
@@ -476,7 +480,7 @@ export default function ProvidersPage() {
 
                 <div className="space-y-1">
                   {filteredModels.map(m => {
-                    const isDefault = m.id === data.default_model
+                    const isDefault = `${selected.id}:${m.id}` === data.default_model
                     const isEnabled = m.enabled
                     const isLoading = pendingOps.has(`mdl-${m.id}`) || pendingOps.has(`def-${m.id}`)
 

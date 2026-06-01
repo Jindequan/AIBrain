@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react'
 export function InteractionModal() {
   const { queue, resolveInteraction, stopProxy } = useInteractionStore()
   const [loading, setLoading] = useState(false)
+  const [trustSession, setTrustSession] = useState(false)
 
   // Cleanup expired interactions every second
   useEffect(() => {
@@ -29,7 +30,7 @@ export function InteractionModal() {
 
   // Find oldest interaction that needs attention
   const activeInteraction = queue.find(
-    i => i.status === 'need_manual' || i.status === 'pending'
+    i => i.status === 'need_manual' || i.status === 'pending' || i.status === 'proxy_running'
   )
 
   if (!activeInteraction) {
@@ -37,7 +38,8 @@ export function InteractionModal() {
   }
 
   const { type, schema_data, status, id } = activeInteraction
-  const isPending = status === 'pending'
+  const isPending = status === 'pending' || status === 'proxy_running'
+  const isProxyRunning = status === 'proxy_running'
 
   const handleAction = async (actionFn) => {
     setLoading(true)
@@ -51,7 +53,7 @@ export function InteractionModal() {
   }
 
   const handleResolve = (result) => {
-    return handleAction(() => resolveInteraction(id, result))
+    return handleAction(() => resolveInteraction(id, { ...result, trust_session: trustSession }))
   }
 
   const handleStopProxy = () => {
@@ -60,6 +62,28 @@ export function InteractionModal() {
 
   // Render appropriate interaction component based on type
   const renderInteraction = () => {
+    // Proxy is still evaluating — show loading state
+    if (isProxyRunning) {
+      return (
+        <div className="flex flex-col items-center gap-4 py-6">
+          <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+          <div className="text-center">
+            <p className="text-white font-medium mb-1">Proxy is evaluating...</p>
+            <p className="text-sm text-gray-400">
+              {schema_data.title || 'Processing your request'}
+            </p>
+          </div>
+          <button
+            onClick={handleStopProxy}
+            disabled={loading}
+            className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
+          >
+            Take Control
+          </button>
+        </div>
+      )
+    }
+
     const commonProps = {
       title: schema_data.title,
       prompt: schema_data.prompt,
@@ -67,12 +91,32 @@ export function InteractionModal() {
     }
 
     switch (type) {
+      case 'approval':
+        return (
+          <ConfirmInteraction
+            title={schema_data.title || 'Approve Tool'}
+            prompt={[
+              `Tool: ${schema_data.tool_name || 'unknown'}`,
+              schema_data.tool_input ? `Input: ${JSON.stringify(schema_data.tool_input)}` : '',
+              schema_data.reason ? `Reason: ${schema_data.reason}` : '',
+              `Risk: ${schema_data.risk || 'unknown'}`,
+            ].filter(Boolean).join('\n')}
+            onApprove={() => handleResolve({ decision: 'approved' })}
+            onDeny={() => handleResolve({ decision: 'denied' })}
+            disabled={loading}
+            trustSession={trustSession}
+            onTrustChange={setTrustSession}
+          />
+        )
+
       case 'confirm':
         return (
           <ConfirmInteraction
             {...commonProps}
             onApprove={() => handleResolve({ decision: 'approved' })}
             onDeny={() => handleResolve({ decision: 'denied' })}
+            trustSession={trustSession}
+            onTrustChange={setTrustSession}
           />
         )
 

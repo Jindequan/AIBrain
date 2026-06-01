@@ -52,14 +52,12 @@ defmodule AIBrain.Web.ProvidersHandlerTest do
       "enabled" => true
     })
 
-    conn = conn(:get, "/api/v1/providers/config")
-    conn = ProvidersHandler.handle_get_config(conn, %{})
+    conn = conn(:get, "/api/v1/my-models")
+    conn = ProvidersHandler.handle_my_models(conn)
     body = Jason.decode!(conn.resp_body)
-    provider = Enum.find(body["providers"], &(&1["name"] == name))
+    provider = Enum.find(body["providers"], &(&1["id"] == name))
 
-    assert provider["configured"] == true
-    assert provider["has_api_key"] == true
-    assert provider["api_key"] == nil
+    assert provider["has_key"] == true
     refute conn.resp_body =~ "sk-config-secret"
   end
 

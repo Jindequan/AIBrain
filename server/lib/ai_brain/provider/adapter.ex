@@ -36,7 +36,7 @@ defmodule AIBrain.Provider.Adapter do
         %Info{
           name: provider_name,
           api_key: api_key,
-          base_url: Map.get(local_cfg, "base_url") || provider_info.base_url,
+          base_url: Map.get(local_cfg, "base_url") || provider_info.base_url || catalog_base_url(provider_atom),
           fetch_models_url: provider_info.fetch_models_url,
           chat_url: provider_info.chat_url,
           priority: Map.get(local_cfg, "priority", 0),
@@ -79,11 +79,25 @@ defmodule AIBrain.Provider.Adapter do
   @doc """
   Build a models map for a provider, merging ReqLLM data with local config.
   """
-  def build_models_map(_provider_atom, _local_cfg) do
-    # Models are loaded lazily via Catalog.models_for_provider when needed.
-    # Pre-loading all models for all 26 providers on startup causes massive
-    # memory usage (LLMDB.Model structs are deeply nested and expensive).
-    %{}
+  def build_models_map(provider_atom, _local_cfg) do
+    try do
+      LLMDB.models(provider_atom)
+      |> Enum.reduce(%{}, fn model, acc ->
+        Map.put(acc, model.id, %{
+          "enabled" => true,
+          "context_window" => get_in(model, [Access.key(:limits), Access.key(:context)]),
+          "max_output_tokens" => get_in(model, [Access.key(:limits), Access.key(:output)]),
+          "type" => "text",
+          "types" => ["text"],
+          "input_modalities" => Enum.map(get_in(model, [Access.key(:modalities), :input]) || ["text"], &to_string/1),
+          "output_modalities" => Enum.map(get_in(model, [Access.key(:modalities), :output]) || ["text"], &to_string/1),
+          "description" => model.name || model.id,
+          "source" => "llmdb"
+        })
+      end)
+    rescue
+      _ -> %{}
+    end
   end
 
   @doc """
@@ -144,6 +158,20 @@ defmodule AIBrain.Provider.Adapter do
     e ->
       Logger.error("Provider migration failed: #{inspect(e)}")
       {:error, e}
+  end
+
+  # ── Private Helpers ──────────────────────────────────────
+
+  defp catalog_base_url(provider_atom) do
+    try do
+      module = ReqLLM.Providers.get!(provider_atom)
+
+      if function_exported?(module, :default_base_url, 0) do
+        module.default_base_url()
+      end
+    rescue
+      _ -> nil
+    end
   end
 
   defp migrate_models(models_map) when is_map(models_map) do

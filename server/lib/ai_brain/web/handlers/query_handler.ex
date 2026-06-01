@@ -17,6 +17,21 @@ defmodule AIBrain.Web.Handlers.QueryHandler do
       with_session_lock(opts, fn ->
         execution_messages = persist_and_load_execution_messages(messages, opts)
 
+        if Map.get(params, "model", "") not in [nil, ""] do
+          session_id = Keyword.get(opts, :session_id)
+          if session_id do
+            AIBrain.ConversationLog.put_session_meta(session_id, "requested_model", params["model"])
+          end
+        end
+        for key <- ["chat_mode", "run_mode"] do
+          if Map.get(params, key, "") not in [nil, ""] do
+            session_id = Keyword.get(opts, :session_id)
+            if session_id do
+              AIBrain.ConversationLog.put_session_meta(session_id, key, params[key])
+            end
+          end
+        end
+
         Orchestrator.run_messages_auto(
           execution_messages,
           Keyword.put(opts, :_history_loaded, true),
@@ -48,6 +63,21 @@ defmodule AIBrain.Web.Handlers.QueryHandler do
           try do
             # 在进入查询流程前，先持久化新增用户消息到 session store。
             execution_messages = persist_and_load_execution_messages(messages, opts)
+
+            if Map.get(params, "model", "") not in [nil, ""] do
+              session_id = Keyword.get(opts, :session_id)
+              if session_id do
+                AIBrain.ConversationLog.put_session_meta(session_id, "requested_model", params["model"])
+              end
+            end
+            for key <- ["chat_mode", "run_mode"] do
+              if Map.get(params, key, "") not in [nil, ""] do
+                session_id = Keyword.get(opts, :session_id)
+                if session_id do
+                  AIBrain.ConversationLog.put_session_meta(session_id, key, params[key])
+                end
+              end
+            end
 
             conn =
               conn
@@ -89,11 +119,7 @@ defmodule AIBrain.Web.Handlers.QueryHandler do
                   "event: complete\ndata: #{json(%{run_id: run_id, response: text})}\n\n"
                 )
 
-              {:ok, %{run_id: run_id, result: {:suspended, meta}}} ->
-                Plug.Conn.chunk(
-                  conn,
-                  "event: suspended\ndata: #{json(%{run_id: run_id, suspended: true, reason: Map.get(meta, :reason, "approval_required"), status: Map.get(meta, :status, "waiting_approval"), approval_id: Map.get(meta, :approval_id) || Map.get(meta, :interaction_id), interaction_id: Map.get(meta, :interaction_id), tool_name: Map.get(meta, :tool_name)})}\n\n"
-                )
+              # unreachable — auth blocks in AuthorizationWorkflow, approval flows via Bus
 
               {:ok, %{run_id: run_id, result: {:error, reason}}} ->
                 Logger.error("Stream query error: #{inspect(reason)}")
@@ -279,20 +305,7 @@ defmodule AIBrain.Web.Handlers.QueryHandler do
           timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
         })
 
-      {:ok, %{run_id: run_id, result: {:suspended, meta}}} ->
-        maybe_enqueue_distillation(opts)
-
-        json_response(conn, 202, %{
-          success: false,
-          run_id: run_id,
-          suspended: true,
-          reason: Map.get(meta, :reason, "approval_required"),
-          status: Map.get(meta, :status, "waiting_approval"),
-          approval_id: Map.get(meta, :approval_id) || Map.get(meta, :interaction_id),
-          interaction_id: Map.get(meta, :interaction_id),
-          tool_name: Map.get(meta, :tool_name),
-          timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-        })
+      # unreachable — auth blocks in AuthorizationWorkflow, approval flows via Bus
 
       {:ok, %{run_id: run_id, result: {:error, reason}}} ->
         Logger.error("Query error: #{inspect(reason)}")

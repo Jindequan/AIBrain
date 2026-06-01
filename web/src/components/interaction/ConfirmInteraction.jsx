@@ -1,7 +1,6 @@
-// frontend/src/components/interaction/ConfirmInteraction.jsx
 import { Check, X } from 'lucide-react'
 
-export function ConfirmInteraction({ title, prompt, onApprove, onDeny, disabled = false }) {
+export function ConfirmInteraction({ title, prompt, onApprove, onDeny, disabled = false, trustSession, onTrustChange }) {
   return (
     <div className="flex flex-col">
       {/* Header */}
@@ -9,6 +8,20 @@ export function ConfirmInteraction({ title, prompt, onApprove, onDeny, disabled 
         <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
         <p className="text-sm text-gray-300 whitespace-pre-wrap">{prompt}</p>
       </div>
+
+      {/* Trust this session checkbox */}
+      {onTrustChange && (
+        <label className="flex items-center gap-2 mb-4 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={trustSession || false}
+            onChange={(e) => onTrustChange(e.target.checked)}
+            disabled={disabled}
+            className="w-4 h-4 rounded border-gray-500 bg-gray-700 text-green-500 focus:ring-green-500"
+          />
+          <span className="text-sm text-gray-300">Trust this session — auto-approve all subsequent tools</span>
+        </label>
+      )}
 
       {/* Buttons */}
       <div className="flex items-center justify-end gap-3 mt-6">

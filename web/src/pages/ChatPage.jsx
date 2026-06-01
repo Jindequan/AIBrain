@@ -10,6 +10,7 @@ import { ChatInput } from "../components/chat/ChatInput";
 import { ChatStatusBar } from "../components/chat/ChatStatusBar";
 import { useWsStore } from "../store/wsStore";
 import { useChatStore } from "../store/chatStore";
+import { useInteractionStore } from "../store/interactionStore";
 import { useToastStore } from "../store/toastStore";
 import { useChatScroll } from "../hooks/useChatScroll";
 import { useChatWebSocket } from "../hooks/useChatWebSocket";
@@ -33,9 +34,9 @@ function WelcomeScreen({ onSendExample, recentSessions, onOpenSession }) {
         {/* Logo */}
         <div className="flex flex-col items-center mb-12">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent to-accent-hover shadow-lg shadow-accent/20 flex items-center justify-center mb-4">
-            <img src="/logo.png" alt="AIBrain" className="w-7 h-7" />
+            <img src="/logo.png" alt="AIbrain" className="w-7 h-7" />
           </div>
-          <h1 className="text-xl font-semibold text-text-primary tracking-tight">AIBrain</h1>
+          <h1 className="text-xl font-semibold text-text-primary tracking-tight">AIbrain</h1>
           <p className="text-sm text-text-muted mt-2">How can I help you today?</p>
         </div>
 
@@ -115,10 +116,11 @@ export default function ChatPage() {
   const qParamHandledRef = useRef(false);
 
   const [selectedGoalId, setSelectedGoalId] = useState(null);
-  const [chatMode, setChatMode] = useState(() => { try { return localStorage.getItem('aibrain_chat_mode') || 'chat'; } catch { return 'chat'; } });
-  const [runMode, setRunMode] = useState(() => { try { return localStorage.getItem('aibrain_run_mode') || 'interactive'; } catch { return 'interactive'; } });
+  const [chatMode, setChatMode] = useState('chat');
+  const [runMode, setRunMode] = useState('interactive');
   const [autonomyLevel, setAutonomyLevel] = useState(0);
   const [selectedModelSpec, setSelectedModelSpec] = useState(null);
+  const lastModelSessionRef = useRef(null); // track which session's model we restored
 
   // Available models for the selector
   const { data: availableModels = [] } = useQuery({
@@ -259,6 +261,12 @@ export default function ChatPage() {
     const store = useChatStore.getState();
     if (store.streaming && store.userStreaming) return;
 
+    // Never overwrite local messages while an approval interaction is pending.
+    const pendingApproval = useInteractionStore.getState().queue.some(
+      (i) => i.status === 'pending' && i.type === 'approval'
+    );
+    if (pendingApproval) return;
+
     const signature = messageSyncSignature(serverMessages);
 
     if (isNewSession || sessionSyncRef.current.signature !== signature) {
@@ -282,6 +290,16 @@ export default function ChatPage() {
       setMessages(normalized);
     }
   }, [effectiveSessionId, sessionData, messagesData, setMessages]);
+
+  // Restore session-scoped config from backend metadata on session switch / refresh
+  useEffect(() => {
+    if (effectiveSessionId && effectiveSessionId !== lastModelSessionRef.current) {
+      lastModelSessionRef.current = effectiveSessionId;
+      setSelectedModelSpec(sessionData?.requested_model || null);
+      if (sessionData?.metadata?.chat_mode) setChatMode(sessionData.metadata.chat_mode);
+      if (sessionData?.metadata?.run_mode) setRunMode(sessionData.metadata.run_mode);
+    }
+  }, [sessionData?.requested_model, sessionData?.metadata?.chat_mode, sessionData?.metadata?.run_mode, effectiveSessionId]);
 
   // Recovery: when the session is running on the backend but we're not in a
   // user-initiated stream, enter/exit recovery mode to poll for new messages.
@@ -393,9 +411,13 @@ export default function ChatPage() {
     }
   }, [searchParams, navigate]);
 
-  // Persist chat preferences (autonomy intentionally not persisted — security boundary)
-  useEffect(() => { try { localStorage.setItem('aibrain_chat_mode', chatMode); } catch { /* localStorage may be unavailable */ } }, [chatMode]);
-  useEffect(() => { try { localStorage.setItem('aibrain_run_mode', runMode); } catch { /* localStorage may be unavailable */ } }, [runMode]);
+  // Persist chat mode / run mode via backend session metadata
+  useEffect(() => { /* chat_mode persisted via session query param */ }, [chatMode]);
+  useEffect(() => { /* run_mode persisted via session query param */ }, [runMode]);
+  // Persist only when user manually picks a model (not when restored from session)
+  const handleUserSelectModel = useCallback((modelSpec) => {
+    setSelectedModelSpec(modelSpec);
+  }, []);
 
   async function handleSend() {
     const hasText = input.trim().length > 0;
@@ -406,7 +428,7 @@ export default function ChatPage() {
     let sessionId = resolveSendSessionId(urlSessionId, activeSessionId);
     if (!sessionId) {
       try {
-        const body = activeWorkspacePath ? { workspace_path: activeWorkspacePath } : undefined;
+        const body = activeWorkspacePath || selectedModelSpec ? { workspace_path: activeWorkspacePath, model: selectedModelSpec || undefined } : undefined;
         const res = await sessionsApi.create(body);
         sessionId = res.session_id;
         setActiveSession(sessionId);
@@ -466,6 +488,7 @@ export default function ChatPage() {
       run_mode: runMode || 'interactive',
       autonomy_level: autonomyLevel || 0,
       model: selectedModelSpec || undefined,
+      chat_mode: chatMode || 'chat',
       metadata: {
         entrypoint: 'chat',
         assistant_mode: chatMode || 'interactive',
@@ -493,7 +516,6 @@ export default function ChatPage() {
           sseControllerRef.current = null;
           const chat = useChatStore.getState();
           chat.addApprovalRequiredMessage(approval);
-          chat.resumeStreamingAfterApproval();
           addToast({ title: "Approval required", message: approval?.reason || "Open approvals to continue", variant: "warning" });
           // Don't invalidate the active session — local approval message must not be overwritten.
           queryClient.invalidateQueries({ queryKey: ['sessions'] });
@@ -710,7 +732,7 @@ export default function ChatPage() {
             onAutonomyLevelChange={setAutonomyLevel}
             availableModels={availableModels}
             selectedModelSpec={selectedModelSpec}
-            onSelectModel={(modelSpec) => setSelectedModelSpec(modelSpec)}
+            onSelectModel={handleUserSelectModel}
           />
         </div>
 

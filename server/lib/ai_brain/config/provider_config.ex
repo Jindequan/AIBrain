@@ -157,56 +157,127 @@ defmodule AIBrain.Config.ProviderConfig do
     |> Map.get("api_key")
   end
 
-  @doc "Add a model to the disabled list for a provider. O(1)."
-  def disable_model(provider_name, model_name) when is_binary(provider_name) and is_binary(model_name) do
+  @doc """
+  Enable a model for a provider.
+
+  If `enabled_models` is nil (all enabled by default), this is a no-op.
+  If it's an explicit list, the model is added.
+  """
+  def enable_model(provider_name, model_name)
+      when is_binary(provider_name) and is_binary(model_name) do
     config = load_config()
     providers = Map.get(config, "providers", %{})
     provider_cfg = Map.get(providers, provider_name, %{})
-    current = Map.get(provider_cfg, "disabled_models", [])
-    updated = [model_name | current] |> Enum.uniq()
-    new_cfg = Map.put(provider_cfg, "disabled_models", updated)
-    new_config = Map.put(config, "providers", Map.put(providers, provider_name, new_cfg))
-    save_config(new_config)
-  end
 
-  @doc "Check if a model is enabled in a provider"
-  def model_enabled?(provider_name, model_name) when is_binary(provider_name) and is_binary(model_name) do
-    model_name not in disabled_models(provider_name)
-  end
+    case Map.get(provider_cfg, "enabled_models") do
+      nil ->
+        {:ok, :all}
 
-  @doc "Get disabled models for a provider (all models enabled by default)"
-  def disabled_models(provider_name) when is_binary(provider_name) do
-    config = load_config()
+      models when is_list(models) ->
+        updated = [model_name | models] |> Enum.uniq()
+        new_cfg = Map.put(provider_cfg, "enabled_models", updated)
+        new_config = Map.put(config, "providers", Map.put(providers, provider_name, new_cfg))
+        save_config(new_config)
+        {:ok, :updated}
 
-    config
-    |> Map.get("providers", %{})
-    |> Map.get(provider_name, %{})
-    |> Map.get("disabled_models", [])
-  end
-
-  @doc "Toggle a model: disable or enable. Uses disabled_models list so O(1)."
-  def toggle_model(model_id, enabled) when is_binary(model_id) and is_boolean(enabled) do
-    case String.split(model_id, ":", parts: 2) do
-      [provider, model] -> toggle_model(provider, model, enabled)
-      _ -> {:error, :invalid_model_id}
+      _ ->
+        {:ok, :all}
     end
   end
 
-  def toggle_model(provider_name, model_name, enabled) when is_binary(provider_name) and is_binary(model_name) do
+  @doc """
+  Disable a model for a provider.
+
+  If `enabled_models` is nil (all enabled), this materializes the list
+  from the catalog first, then removes the model.
+  If it's already an explicit list, the model is removed.
+  """
+  def disable_model(provider_name, model_name)
+      when is_binary(provider_name) and is_binary(model_name) do
     config = load_config()
     providers = Map.get(config, "providers", %{})
     provider_cfg = Map.get(providers, provider_name, %{})
-    current = Map.get(provider_cfg, "disabled_models", [])
-    updated = if enabled, do: List.delete(current, model_name), else: [model_name | current] |> Enum.uniq()
-    new_cfg = Map.put(provider_cfg, "disabled_models", updated)
+
+    updated_list =
+      case Map.get(provider_cfg, "enabled_models") do
+        nil ->
+          provider_atom = String.to_atom(provider_name)
+          all_models = LLMDB.models(provider_atom) |> Enum.map(& &1.id)
+          List.delete(all_models, model_name)
+
+        models when is_list(models) ->
+          List.delete(models, model_name)
+
+        _ ->
+          []
+      end
+
+    new_cfg = Map.put(provider_cfg, "enabled_models", updated_list)
     new_config = Map.put(config, "providers", Map.put(providers, provider_name, new_cfg))
     save_config(new_config)
-    {:ok, enabled}
+    {:ok, :updated}
   end
 
-  @doc "Get enabled models for a provider. Returns :all (default) or a list minus disabled."
+  @doc """
+  Get enabled models for a provider.
+
+  Returns `:all` when no explicit list is set (all models enabled by default),
+  or a list of model IDs that are explicitly enabled.
+  """
   def enabled_models(provider_name) when is_binary(provider_name) do
-    :all
+    cfg = get_provider_config(provider_name)
+
+    case Map.get(cfg, "enabled_models") do
+      nil -> :all
+      models when is_list(models) -> models
+      _ -> :all
+    end
+  end
+
+  @doc "Check if a model is enabled for a provider."
+  def model_enabled?(provider_name, model_name)
+      when is_binary(provider_name) and is_binary(model_name) do
+    case enabled_models(provider_name) do
+      :all -> true
+      models -> model_name in models
+    end
+  end
+
+  @doc """
+  Convenience: toggle a "provider:model" string.
+  """
+  def toggle_model(model_id, enabled) when is_binary(model_id) and is_boolean(enabled) do
+    case String.split(model_id, ":", parts: 2) do
+      [provider, model] ->
+        if enabled, do: enable_model(provider, model), else: disable_model(provider, model)
+
+      _ ->
+        {:error, :invalid_model_id}
+    end
+  end
+
+  @doc """
+  Convenience: toggle with separate provider and model name.
+  """
+  def toggle_model(provider_name, model_name, enabled)
+      when is_binary(provider_name) and is_binary(model_name) do
+    if enabled, do: enable_model(provider_name, model_name), else: disable_model(provider_name, model_name)
+  end
+
+  @doc """
+  Get all user-configured models across providers.
+  Returns list of {provider, model_id} tuples.
+  """
+  def all_enabled_models do
+    load_config()
+    |> Map.get("providers", %{})
+    |> Enum.flat_map(fn {provider, cfg} ->
+      case Map.get(cfg, "enabled_models") do
+        nil -> []
+        models when is_list(models) -> Enum.map(models, fn m -> {provider, m} end)
+        _ -> []
+      end
+    end)
   end
 
   # ── Private Helpers ────────────────────────────────────────

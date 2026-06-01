@@ -1,6 +1,5 @@
 import { create } from 'zustand'
-
-const WORKSPACE_KEY = 'aibrain_workspace_path'
+import { useInteractionStore } from './interactionStore'
 
 let _progressiveGen = 0
 
@@ -96,10 +95,6 @@ export const useChatStore = create((set) => ({
   }),
 
   setActiveWorkspacePath: (path) => {
-    try {
-      if (path) localStorage.setItem(WORKSPACE_KEY, path)
-      else localStorage.removeItem(WORKSPACE_KEY)
-    } catch { /* localStorage unavailable */ }
     set({ activeWorkspacePath: path })
   },
 
@@ -318,6 +313,9 @@ export const useChatStore = create((set) => ({
     set((s) => {
       if (s._finished) return s
       const msgs = [...s.messages]
+      const pendingApproval = useInteractionStore.getState().queue.some(
+        (i) => i.status === 'pending' && i.type === 'approval'
+      )
       if (msgs.length > 0) {
         const last = msgs[msgs.length - 1]
         const isEmptyAssistant =
@@ -327,11 +325,20 @@ export const useChatStore = create((set) => ({
 
         if (isEmptyAssistant) {
           msgs.pop()
+        } else if (pendingApproval) {
+          // Don't mark messages as incomplete while approval is pending —
+          // the conversation is waiting for a decision, not interrupted.
         } else {
           msgs[msgs.length - 1] = { ...last, streaming: false, incomplete: true }
         }
       }
-      return { messages: msgs, streaming: false, userStreaming: false, status: null, _finished: true }
+      return {
+        messages: msgs,
+        streaming: false,
+        userStreaming: pendingApproval ? true : false,
+        status: pendingApproval ? s.status : null,
+        _finished: true,
+      }
     })
   },
 
@@ -348,15 +355,14 @@ export const useChatStore = create((set) => ({
         msg.system_type === 'approval_required' &&
         (msg.approval?.approval_id === approvalId || msg.approval?.interaction_id === approvalId)
       )
-      const streamingPatch = {
-        streaming: true,
-        userStreaming: true,
-        _finished: false,
-        status: { text: 'Waiting for approval', type: 'warning' },
-      }
 
       if (alreadyShown) {
-        return streamingPatch
+        return {
+          streaming: true,
+          userStreaming: true,
+          _finished: false,
+          status: { text: 'Waiting for approval', type: 'warning' },
+        }
       }
 
       const msgs = [...s.messages]
@@ -366,8 +372,10 @@ export const useChatStore = create((set) => ({
         Array.isArray(last.content) &&
         last.content.length === 0
 
+      // When the assistant message is an empty placeholder, replace it.
+      // When it has content (text / tool_use), preserve it and keep streaming.
       if (isEmptyAssistant) {
-        msgs[msgs.length - 1] = { ...last, streaming: true }
+        msgs.pop()
       } else if (last?.role === 'assistant' && last?.streaming) {
         msgs[msgs.length - 1] = { ...last, streaming: true }
       }
@@ -378,7 +386,10 @@ export const useChatStore = create((set) => ({
       const text = `Waiting for approval\n${reason}${tool}${run}`
 
       return {
-        ...streamingPatch,
+        streaming: isEmptyAssistant ? false : true,
+        userStreaming: true,
+        _finished: false,
+        status: { text: 'Waiting for approval', type: 'warning' },
         messages: [
           ...msgs,
           {
@@ -402,10 +413,17 @@ export const useChatStore = create((set) => ({
     set((s) => {
       if (!s.userStreaming) return s
       const msgs = [...s.messages]
-      const last = msgs[msgs.length - 1]
-      if (last?.role === 'assistant') {
-        msgs[msgs.length - 1] = { ...last, streaming: true }
-      } else {
+      // Find the most recent assistant message — it may not be the last
+      // message if an approval_required system card was just appended.
+      let found = false
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i]?.role === 'assistant') {
+          msgs[i] = { ...msgs[i], streaming: true }
+          found = true
+          break
+        }
+      }
+      if (!found) {
         msgs.push({ role: 'assistant', content: [], streaming: true, created_at: new Date().toISOString() })
       }
       return {

@@ -14,7 +14,6 @@ defmodule AIBrain.Provider.Registry do
   use GenServer
   require Logger
 
-  alias AIBrain.Config.FileBackend
   alias AIBrain.Config.ProviderConfig
   alias AIBrain.Provider.Adapter
   alias AIBrain.LLM.Provider, as: LLMProvider
@@ -48,37 +47,22 @@ defmodule AIBrain.Provider.Registry do
   def init(_opts) do
     table = :ets.new(:ai_brain_provider_registry, [:set, :protected, :named_table])
 
-    # Try to load providers from ReqLLM first
+    providers = load_providers_from_req_llm()
+
+    # One-time migration from legacy providers.json if no ReqLLM providers found
     providers =
-      case load_providers_from_req_llm() do
-        providers when is_list(providers) and length(providers) > 0 ->
-          Logger.info("Loaded #{length(providers)} providers from ReqLLM")
-          providers
+      if providers == [] do
+        legacy = AIBrain.Config.FileBackend.load_providers()
 
-        _ ->
-          # Fallback to legacy system and attempt migration
-          Logger.info("Attempting to load legacy providers and migrate to ReqLLM...")
-          legacy_providers = FileBackend.load_providers()
-
-          if length(legacy_providers) > 0 do
-            Logger.info("Found #{length(legacy_providers)} legacy providers, migrating...")
-
-            case Adapter.migrate_old_config() do
-              :ok ->
-                Logger.info("Successfully migrated legacy providers")
-                # After migration, try loading from ReqLLM again
-                case load_providers_from_req_llm() do
-                  migrated when is_list(migrated) -> migrated
-                  _ -> legacy_providers
-                end
-
-              {:error, reason} ->
-                Logger.warning("Migration failed: #{inspect(reason)}, using legacy providers")
-                legacy_providers
-            end
-          else
-            []
-          end
+        if legacy != [] do
+          Logger.info("Migrating #{length(legacy)} legacy providers to ReqLLM...")
+          Adapter.migrate_old_config()
+          load_providers_from_req_llm()
+        else
+          []
+        end
+      else
+        providers
       end
 
     for p <- providers, do: :ets.insert(table, {p.name, p})
@@ -107,10 +91,8 @@ defmodule AIBrain.Provider.Registry do
 
   @impl true
   def handle_call({:add, %AIBrain.Provider.Info{} = provider}, _from, state) do
-    # Convert to ReqLLM format and store API key
     Adapter.to_req_llm_provider(provider)
     :ets.insert(state.table, {provider.name, provider})
-    persist_to_file()
     notify_router()
     {:reply, :ok, state}
   end
@@ -124,7 +106,6 @@ defmodule AIBrain.Provider.Registry do
     end
 
     :ets.insert(state.table, {provider.name, provider})
-    persist_to_file()
     notify_router()
     {:reply, :ok, state}
   end
@@ -133,33 +114,20 @@ defmodule AIBrain.Provider.Registry do
   def handle_call({:delete, name}, _from, state) do
     :ets.delete(state.table, name)
     ProviderConfig.disable_provider(name)
-    persist_to_file()
     notify_router()
     {:reply, :ok, state}
-  end
-
-  # ── File Persistence ───────────────────────────────────────
-
-  defp persist_to_file do
-    providers = tab2list(:ai_brain_provider_registry)
-    # Still save to old format for backward compatibility
-    FileBackend.save_providers(providers)
   end
 
   # ── Provider Loading ───────────────────────────────────────
 
   defp load_providers_from_req_llm do
-    try do
-      LLMProvider.list_providers()
-      |> Enum.map(fn provider_atom ->
-        Adapter.to_provider_info(provider_atom)
-      end)
-      |> Enum.filter(&(!is_nil(&1)))
-    rescue
-      e ->
-        Logger.error("Error loading providers from ReqLLM: #{inspect(e)}")
-        {:error, e}
-    end
+    LLMProvider.list_providers()
+    |> Enum.map(&Adapter.to_provider_info/1)
+    |> Enum.reject(&is_nil/1)
+  rescue
+    e ->
+      Logger.error("Error loading providers from ReqLLM: #{inspect(e)}")
+      []
   end
 
   # ── Helpers ────────────────────────────────────────────────

@@ -143,7 +143,7 @@ export function SetupWizard({ onComplete }) {
           <div className="w-16 h-16 bg-accent/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Sparkles className="w-8 h-8 text-accent" />
           </div>
-          <h2 className="text-2xl font-bold text-text-primary mb-2">Welcome to AIBrain</h2>
+          <h2 className="text-2xl font-bold text-text-primary mb-2">Welcome to AIbrain</h2>
           <p className="text-text-secondary">
             Your personal AI assistant. Let's set it up in 30 seconds.
           </p>
@@ -255,13 +255,13 @@ export function SetupWizard({ onComplete }) {
       </div>
       <h2 className="text-2xl font-bold text-text-primary mb-2">You're all set!</h2>
       <p className="text-text-secondary mb-6">
-        AIBrain is ready. Start chatting and give it tasks.
+        AIbrain is ready. Start chatting and give it tasks.
       </p>
       <button
         onClick={onComplete}
         className="px-8 py-3 bg-accent text-white rounded-lg font-medium hover:bg-accent/90 transition-colors"
       >
-        Start Using AIBrain
+        Start Using AIbrain
       </button>
     </div>
   )

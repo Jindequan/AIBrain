@@ -25,14 +25,21 @@ defmodule AIBrain.Web.Handlers.UserHandler do
   end
 
   def handle_update(conn, params) do
-    role = Map.get(params, "role", "user")
-
     update_attrs =
       Map.take(params, ["name", "bio", "active", "profile", "preferences"])
       |> Enum.map(fn {k, v} -> {String.to_atom(k), v} end)
       |> Map.new()
 
-    case Users.update(update_attrs, role) do
+    result =
+      case Map.get(params, "id") do
+        nil ->
+          Users.update(update_attrs, "user")
+
+        id ->
+          Users.update_by_id(id, update_attrs)
+      end
+
+    case result do
       {:ok, user} -> json(conn, 200, user)
       {:error, reason} -> json(conn, 422, %{error: reason})
     end

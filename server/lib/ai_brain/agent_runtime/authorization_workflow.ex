@@ -21,8 +21,12 @@ defmodule AIBrain.AgentRuntime.AuthorizationWorkflow do
 
       if AIBrain.Permissions.Modes.normalize(effective_mode) == :approval_required and
            is_nil(resolver) and risk != :read_only do
-        emit_permission_checked(on_event, tool_use, :suspended, risk, :approval_required)
-        wait_for_approval(run_id, request, tool_use, risk, opts)
+        if session_trusted?(request) do
+          {:allow, tool_use}
+        else
+          emit_permission_checked(on_event, tool_use, :suspended, risk, :approval_required)
+          wait_for_approval(run_id, request, tool_use, risk, opts)
+        end
       else
         case AIBrain.Permissions.Policy.authorize(tool_use, registry,
                mode: effective_mode,
@@ -202,4 +206,24 @@ defmodule AIBrain.AgentRuntime.AuthorizationWorkflow do
   def tool_input(%{input: input}), do: input
   def tool_input(%{"input" => input}), do: input
   def tool_input(_), do: %{}
+
+  def session_trusted?(request) do
+    sid = request.session_id
+    if is_binary(sid) and sid != "" do
+      meta = AIBrain.ConversationLog.read_meta(sid)
+      Map.get(meta, "trusted") == true
+    else
+      false
+    end
+  rescue
+    _ -> false
+  end
+
+  def set_session_trusted(session_id) do
+    if is_binary(session_id) and session_id != "" do
+      AIBrain.ConversationLog.put_session_meta(session_id, "trusted", true)
+    end
+  rescue
+    _ -> :ok
+  end
 end

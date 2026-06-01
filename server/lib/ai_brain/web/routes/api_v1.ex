@@ -32,6 +32,7 @@ defmodule AIBrain.Web.Routes.APIv1 do
     MetricsHandler,
     PlanningHandler,
     ProvidersHandler,
+    ProxyHandler,
     QueryHandler,
     RunsHandler,
     SchedulerHandler,
@@ -330,31 +331,58 @@ defmodule AIBrain.Web.Routes.APIv1 do
     InteractionHandler.handle_session_chain(conn, id)
   end
 
-  # Providers
-  get "/api/v1/model-settings" do
-    ProvidersHandler.handle_model_settings(conn)
+  # ── Proxy ──────────────────────────────────────────────────
+  get "/api/v1/proxy" do
+    ProxyHandler.handle_status(conn)
   end
 
-  post "/api/v1/settings/providers" do
-    ProvidersHandler.handle_configure_provider(conn, conn.body_params)
+  post "/api/v1/proxy/toggle" do
+    ProxyHandler.handle_toggle(conn, conn.body_params)
   end
 
-  post "/api/v1/settings/credentials" do
-    ProvidersHandler.handle_store_credential(conn, conn.body_params)
+  # ── Catalog (read-only LLMDB) ────────────────────────────
+  get "/api/v1/catalog/providers" do
+    ProvidersHandler.handle_catalog_providers(conn)
   end
 
-  delete "/api/v1/settings/providers/:name" do
-    ProvidersHandler.handle_delete_provider_settings(conn, name)
+  get "/api/v1/catalog/providers/:id/models" do
+    ProvidersHandler.handle_catalog_provider_models(conn, id)
   end
 
-  post "/api/v1/settings/model-policy" do
-    ProvidersHandler.handle_update_model_policy(conn, conn.body_params)
+  post "/api/v1/catalog/refresh" do
+    ProvidersHandler.handle_catalog_refresh(conn)
   end
 
-  post "/api/v1/settings/catalog/refresh" do
-    ProvidersHandler.handle_refresh_catalog(conn)
+  # ── My Models (user config) ──────────────────────────────
+  get "/api/v1/my-models" do
+    ProvidersHandler.handle_my_models(conn)
   end
 
+  put "/api/v1/my-models/models/:provider/:model" do
+    ProvidersHandler.handle_my_models_enable_model(conn, provider, model)
+  end
+
+  delete "/api/v1/my-models/models/:provider/:model" do
+    ProvidersHandler.handle_my_models_disable_model(conn, provider, model)
+  end
+
+  put "/api/v1/my-models/default" do
+    ProvidersHandler.handle_my_models_set_default(conn, conn.body_params)
+  end
+
+  patch "/api/v1/my-models/providers/:id" do
+    ProvidersHandler.handle_my_models_configure_provider(conn, id, conn.body_params)
+  end
+
+  post "/api/v1/my-models/credentials" do
+    ProvidersHandler.handle_my_models_store_credential(conn, conn.body_params)
+  end
+
+  delete "/api/v1/my-models/providers/:id" do
+    ProvidersHandler.handle_my_models_delete_provider(conn, id)
+  end
+
+  # ── Providers (CRUD) ─────────────────────────────────────
   get "/api/v1/providers" do
     ProvidersHandler.handle_list(conn)
   end

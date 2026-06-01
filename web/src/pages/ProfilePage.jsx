@@ -29,7 +29,7 @@ export default function ProfilePage() {
   })
 
   const mutation = useMutation({
-    mutationFn: (body) => usersApi.update(body),
+    mutationFn: (body) => usersApi.updateCurrent(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user'] })
       setSaved(true)

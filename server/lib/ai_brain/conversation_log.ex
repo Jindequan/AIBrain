@@ -291,7 +291,7 @@ defmodule AIBrain.ConversationLog do
 
   # ── Meta JSON ──
 
-  defp read_meta(session_id) do
+  def read_meta(session_id) do
     path = meta_file_path(session_id)
 
     case File.read(path) do
@@ -312,6 +312,12 @@ defmodule AIBrain.ConversationLog do
     File.mkdir_p!(Path.dirname(path))
     File.write!(path, Jason.encode!(meta, pretty: true))
     :ok
+  end
+
+  @doc "Persist a single key-value pair to the session's meta.json."
+  def put_session_meta(session_id, key, value) do
+    meta = read_meta(session_id) |> Map.put(to_string(key), value)
+    write_meta(session_id, meta)
   end
 
   defp get_message_count(_session_id, path) do
